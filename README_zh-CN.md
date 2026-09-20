@@ -21,10 +21,8 @@ DRIVER HUD 当前正式支持**堡垒坦克**，可在驾驶位与炮手位显�
 ## 依赖
 
 - **Bingus Shared Loader v15（BSL，API 1）** —— 必须单独安装
-- **HD2 HUD+** —— 可选，DRIVER HUD 不依赖它
 
 BSL：https://www.nexusmods.com/helldivers2/mods/16292  
-HD2 HUD+：https://www.nexusmods.com/helldivers2/mods/15298
 
 ## 安装
 
@@ -41,7 +39,6 @@ HD2 HUD+：https://www.nexusmods.com/helldivers2/mods/15298
 通常从上到下为：
 
 ```text
-HD2 HUD+（可选）
 DRIVER HUD
 Bingus Shared Loader v15
 ```
