@@ -21,10 +21,8 @@ DRIVER HUD currently supports the **Bastion tank**, displaying hull health, main
 ## Requirements
 
 - **Bingus Shared Loader v15 (BSL, API 1)** — required and installed separately
-- **HD2 HUD+** — optional; DRIVER HUD does not depend on it
 
 BSL: https://www.nexusmods.com/helldivers2/mods/16292  
-HD2 HUD+: https://www.nexusmods.com/helldivers2/mods/15298
 
 ## Installation
 
