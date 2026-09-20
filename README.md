@@ -39,7 +39,6 @@ Using Arsenal:
 Typical order, top to bottom:
 
 ```text
-HD2 HUD+ (optional)
 DRIVER HUD
 Bingus Shared Loader v15
 ```
