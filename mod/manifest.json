@@ -1,0 +1,16 @@
+{
+  "Version": 1,
+  "Guid": "9e31f36d-3865-4af5-b9b3-5368261394d0",
+  "Name": "DRIVER HUD 1.2.1",
+  "Description": "Bastion driver and gunner HUD: hull health, main-gun and coax ammunition, and center reticle. Requires Bingus Shared Loader v15 (API 1).",
+  "Options": [
+    {
+      "Name": "Core",
+      "Description": "Required. DRIVER HUD module for Bingus Shared Loader v15 / API 1.",
+      "Include": [
+        "CORE"
+      ]
+    }
+  ],
+  "IconPath": "icon.png"
+}
