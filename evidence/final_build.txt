@@ -1,0 +1,14 @@
+{
+  "version": "1.4.0",
+  "lua_bytes": 131874,
+  "source_sha256": "2e829ceb066679069978663f13f773341b7929678f9942dec9f49b03cc697afc",
+  "baseline_sha256": "e9c0db9217a5ee2cad3ba1d8baf094ec25e553606f3ecafa3dc1d64af2664197",
+  "runtime_validation": "OFFLINE_ONLY; Windows/HD2 integration and non-authority multiplayer not executed here",
+  "frozen_blocks": {
+    "tank_ammo_and_refresh": "83615159a0f19ede5ffd9ea81101ae3c5101acf2501e2d31e4e745c33f0eb641",
+    "tank_draw": "abef937054ad73cec11d2543fd311c40fb887f9da4c1dbebdf5abb35629f427d",
+    "tank_original_reference_resolver": "b03a127d0495319eb277a776c98b826697c2be9682bbb861d824a4a2d6cdcb27"
+  },
+  "zip_sha256": "36804245c263e15626efdb0c4fba4e148a20a70d6e9d710cfb45a8152c4bac5e",
+  "zip_bytes": 59746
+}

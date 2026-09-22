@@ -16,18 +16,24 @@ k.ReadProcessMemory=function(handle,p,b,n,got)
  state.calls=state.calls+1;ffi.fill(b,n,65);got[0]=state.partial and n-1 or n;return 1
 end
 local proxy=setmetatable({os='Windows',abi=function(x)return x=='64bit'end,load=function(name)assert(name=='kernel32');return k end},{__index=ffi})
-local env=setmetatable({require=function(name)if name=='ffi'then return proxy end;return require(name)end},{__index=_G})
+local env=setmetatable({C={},require=function(name)if name=='ffi'then return proxy end;return require(name)end},{__index=_G})
 local chunk=assert(loadstring(source..'\nreturn Native'));setfenv(chunk,env);local N=chunk();local w=assert(N.open_win32());local checks=0
 local function check(value,label)checks=checks+1;assert(value,label);print('PASS '..label)end
 check(w.base()==base,'module pointer converted without precision loss')
 check(w.read(base+32,16)==string.rep('A',16),'RPM copies exact length into owned buffer')
 state.partial=true;check(w.read(base,16)==nil,'partial reads rejected');state.partial=false
-state.protect=0x104;check(w.read(base,16)==nil,'guard pages rejected before RPM')
-state.protect=1;check(w.read(base,16)==nil,'NOACCESS rejected')
-state.protect=4;state.committed=0x10000;check(w.read(base,16)==nil,'uncommitted pages rejected')
-state.committed=4096;state.vqsize=0;check(w.read(base,16)==nil,'failed VirtualQuery rejected')
-state.vqsize=48;check(w.read(base+4090,32)==nil,'read crossing unknown region rejected')
+w.begin_sample();state.protect=0x104;check(w.read(base,16)==nil,'guard pages rejected before RPM')
+w.begin_sample();state.protect=1;check(w.read(base,16)==nil,'NOACCESS rejected')
+w.begin_sample();state.protect=4;state.committed=0x10000;check(w.read(base,16)==nil,'uncommitted pages rejected')
+w.begin_sample();state.committed=4096;state.vqsize=0;check(w.read(base,16)==nil,'failed VirtualQuery rejected')
+w.begin_sample();state.vqsize=48;check(w.read(base+4090,32)==nil,'read crossing unknown region rejected')
 check(not pcall(w.read,0,16),'null/unbounded read rejected')
 check(not pcall(w.read,base,4097),'oversized request rejected')
 check(state.calls==2,'guarded cases never call RPM')
-print('RESULT WIN32_ADAPTER checks='..checks..' fails=0 (MOCK_WIN32, REAL_LUAJIT_FFI)')
+N.perf=true;w.begin_sample();state.protect=4;state.committed=4096;state.vqsize=48
+check(w.read(base+32,4)==string.rep('A',4),'new sample readable')
+check(w.read(base+36,4)==string.rep('A',4),'same-sample read works')
+check(w.stats.reads==2 and w.stats.queries==1 and w.stats.bytes==8,'per-sample protection cache and profiler counters')
+state.partial=true;check(w.read(base+40,4)==nil,'cached protection never hides RPM short read');state.partial=false
+w.begin_sample();w.read(base+40,4);check(w.stats.queries==2,'next sample invalidates protection cache')
+print('RESULT WIN32_ADAPTER checks='..checks..' fails=0 (MOCK_WIN32, OWNED_FFI_BUFFERS, runtime='..tostring(jit and jit.version or _VERSION)..')')

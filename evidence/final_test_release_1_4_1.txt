@@ -1,0 +1,8 @@
+PASS release log version marker
+PASS tested HF1 manifest guid retained
+PASS manifest name formal release
+PASS old ring remains left of old main icon
+PASS ring radius compact
+PASS ring failure isolated
+PASS no unknown targeted read introduced
+RESULT RELEASE_1_4_1 checks=7 fails=0

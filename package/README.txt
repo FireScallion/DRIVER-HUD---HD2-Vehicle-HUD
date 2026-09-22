@@ -1,64 +1,54 @@
-DRIVER HUD 1.3.4 — Tank + FRV HUD
+DRIVER HUD 1.4.1
 
-Features
-- Bastion driver/gunner: body HP, main ammunition, coax ammunition, and center reticle.
-  Full main-gun ammunition is 31 rounds (30+1).
-- HMG FRV and Supply FRV: body HP plus one continuous internal durability bar per tire.
-  Tire HP numbers are not shown. Tire order is LF / RF / LR / RR when facing forward.
-- FRV body outline, window outline, and body HP number are white above 75%, yellow at <=75%, and red at <=50%.
-- FRV HUD screen position and scale can be changed with the included graphical configurator.
+Vehicle status HUD for Helldivers 2. Requires Bingus Shared Loader v15 / API 1.
 
-Installation (Arsenal)
-1. Disable/remove ALL previous DRIVER HUD versions, including FRV / Resolver / Probe test branches.
-   Do not enable multiple DRIVER HUD versions at the same time.
-2. Import DRIVER_HUD_1.3.4.zip and enable Core.
-3. Separately install and enable Bingus Shared Loader v15 (BSL, API 1). BSL is not included.
-4. With the default priority mode, place BSL at the bottom so it loads last.
-   If First-Mod Priority is enabled, reverse the order as needed so BSL keeps final override priority.
-5. Purge, Deploy, then launch the game.
+SUPPORTED VEHICLES
+Original Bastion: hull health, main-gun ammunition (30 + 1), coax ammunition and a main-gun reload indicator.
+Gatling/missile tank: hull health, current 300-round belt, six reserve-belt indicators, two missile-rack counts combined, and a Gatling reload indicator. Gatling on the left, missiles on the right. Original Bastion layout is retained.
+HMG FRV / Supply FRV: vehicle health and individual tire condition. Existing wheel visuals and colour thresholds are retained.
+The mod displays game state; it does not change health, ammunition, damage or reload rules.
+
+INSTALLATION
+1. Close the game. Disable/remove every earlier DRIVER HUD and all tank/FRV probes.
+2. Import DRIVER_HUD_1.4.1.zip directly into Arsenal and enable Core.
+3. Install/enable Bingus Shared Loader separately. Under Arsenal's default priority convention, put BSL at the bottom. With First-Mod Priority, use the equivalent final effective priority.
+4. Purge, then Deploy, then launch the game.
+Do not enable multiple DRIVER HUD/probe versions together.
+The same install ZIP is used for GitHub Release and Nexus Main File.
 
 FRV HUD Position Adjustment
-You do not need to open or edit JSON files manually.
+No PowerShell, CMD or graphical configurator is included or needed.
+Start the game once with the mod enabled. Then press Win+R and paste:
+%APPDATA%\Arrowhead\Helldivers2
+Open frv_hud_position.txt in Notepad. It contains English/Chinese instructions.
+Edit x, y and scale, save, and wait about two seconds in game.
+x: 0 = left, 1 = right. y: 0 = top, 1 = bottom. Coordinates refer to the HUD centre.
+scale: 0.5 to 2.0. Defaults: x=0.714, y=0.90, scale=1.
+Keep all three values. Invalid/incomplete edits keep the last valid position.
+The live file is OUTSIDE the ZIP. There is no need to extract the mod, modify the Arsenal package, confirm a ZIP update, Purge/Deploy, or restart the game when changing these three values.
+On first creation, valid settings from the old frv_hud_position.json are migrated. Once TXT exists, edit TXT only; the old configurator no longer controls this version. Updating the mod does not intentionally overwrite an existing TXT.
 
-1. Extract DRIVER_HUD_1.3.4.zip to any normal folder.
-2. Double-click CONFIGURE_FRV_HUD.cmd in the root folder.
-3. Adjust:
-   - Horizontal position
-   - Vertical position
-   - Scale
-   You can also use the Left / Right / Up / Down buttons for small movements.
-4. Click Apply. A running HUD picks up the new settings in about 2 seconds; no Purge, Deploy, or game restart is needed.
-5. Reset Defaults restores the default values in the window; click Apply to save them.
+OTHER CONFIGURATION
+Optional driver_hud.cfg lives in the same AppData folder. A template is in the ZIP.
+Defaults: debug=true, offset_y=155, scale=1, alpha=0.76, perf=false, geometry_numbers=true.
+offset_y and scale affect the tank HUD; alpha affects both HUD styles.
+geometry_numbers=false restores the original numeric font.
+Restart the game after changes to driver_hud.cfg (unlike FRV position TXT).
 
-The configurator follows the Windows display language automatically and can also be switched between English and Chinese from the top-right button.
-No administrator permissions, VS Code, Python, or extra software are required.
-The active settings are stored at:
-  %APPDATA%\Arrowhead\Helldivers2\frv_hud_position.json
-Most users never need to edit this file directly.
+READING AND RELOAD INDICATORS
+Ammunition may update in steps. Missing readings are not treated as zero.
+A dimmed bar/count with a dotted underline is last-known telemetry, not a fresh reading.
+Reload indicators follow observed reload states; zero ammunition does not start them automatically.
+A known pause retains observed progress. Re-entry does not automatically restart a reload.
+A static dotted ring means exact starting progress was not observed. Long state gaps hold the indicator rather than falsely completing it. The ring never adds ammunition or spends a reserve belt.
 
-Other configuration
-Optional driver_hud.cfg goes to:
-  %APPDATA%\Arrowhead\Helldivers2\driver_hud.cfg
-Defaults: debug=true, offset_y=155, scale=1, alpha=0.76.
-offset_y/scale control the tank HUD; FRV position and size use the separate configurator; alpha affects both HUDs.
-Restart the game after editing driver_hud.cfg.
+BUG REPORTS
+Please include mod/game version, vehicle, seat, host/client role, preceding actions, and a screenshot/video where useful.
+Current log: %APPDATA%\Arrowhead\Helldivers2\driver_hud.log
+Previous log: %APPDATA%\Arrowhead\Helldivers2\driver_hud_previous.log
+BSL log: %LOCALAPPDATA%\CowboyBingus\Helldivers2\Logs\BingusSharedLoader.log
+Please ZIP and share full logs privately. Game updates may require a compatibility update.
 
-Troubleshooting
-Logs:
-  %APPDATA%\Arrowhead\Helldivers2\driver_hud.log            current game process
-  %APPDATA%\Arrowhead\Helldivers2\driver_hud_previous.log   previous game process
-The log rotates once when a new helldivers2.exe process starts. Mod/Lua reloads inside the same game process keep appending to the current log.
-If the issue happened in the just-ended run, include driver_hud_previous.log too.
-
-BSL loader log:
-  %LOCALAPPDATA%\CowboyBingus\Helldivers2\Logs\BingusSharedLoader.log
-
-Include the game version, vehicle, seat, host/client status, whether you switched vehicles, and the sequence leading to the issue.
-Keep debug=true while reporting problems. Share logs privately.
-
-Credits / open source
-Project-owned code retains the MIT License. Third-party material retains its original permissions.
-Source repository: https://github.com/FireScallion/DRIVER-HUD---HD2-Vehicle-HUD
-See CREDITS.txt for third-party sources and acknowledgements. No game DLLs, dumps, third-party loaders, or fonts are included.
-
-Performance diagnostics (optional): set perf=true together with debug=true in driver_hud.cfg and restart. Default perf=false. See PERFORMANCE_说明.txt for validation limits.
+RELEASE VALIDATION
+1.4.1 formalizes the live-tested 1.4.0-HF1 hotfix: tank HUD display was restored and reload indicators were moved to the left of the reloadable weapon icon. Offline regression tests were rerun; exhaustive multiplayer/FPS validation is still outside the automated test scope.
+Project code: MIT. See CREDITS.txt for third-party attribution.

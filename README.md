@@ -1,165 +1,43 @@
 # DRIVER HUD — HD2 Vehicle HUD
 
-A lightweight vehicle-status HUD mod for **Helldivers 2**.
+Lightweight vehicle-status HUD for the original Bastion, Gatling/missile tank, HMG FRV and Supply FRV.
 
-**Current version: 1.3.4**  
-[中文说明](README_中文.md) · [Nexus Mods](https://www.nexusmods.com/helldivers2/mods/16358) · [Latest GitHub Release](https://github.com/FireScallion/DRIVER-HUD---HD2-Vehicle-HUD/releases/latest)
+## 1.4.1
 
-## Supported vehicles
+The Gatling tank uses a **current-belt bar plus six reserve indicators**, rather than rapidly changing ammunition digits. Two independent missile-rack readings are combined. Both tank variants gain reload indicators. The original Bastion keeps its existing weapon layout.
 
-### Bastion tank
-
-- Hull HP with current / maximum value and health bar.
-- Main-gun ammunition.
-- Coaxial machine-gun ammunition.
-- Center-screen reticle.
-- Works in both the driver and gunner seats.
-- Full main-gun load is 31 rounds (30+1).
-
-### HMG FRV and Supply FRV
-
-- Vehicle body HP.
-- Independent condition display for all four tires.
-- Continuous durability bar inside each tire; individual tire HP numbers are not shown.
-- Destroyed tires switch to a hub-only visual state.
-- Tire order is **LF / RF / LR / RR** when facing forward.
-- FRV body outline, window outline, and HP number change color with body condition:
-  - above 75%: white
-  - 75% or lower: yellow
-  - 50% or lower: red
-- FRV HUD position and scale can be changed with the included graphical configurator.
-
-DRIVER HUD only displays vehicle state. It does not change vehicle health, damage, ammunition capacity, or other gameplay values.
-
-![FRV HUD preview](docs/frv_ui_preview.png)
-
-## Requirement
-
-**Bingus Shared Loader v15 / API 1** is required and must be installed separately.
-
-- Nexus Mods: https://www.nexusmods.com/helldivers2/mods/16292
-- BSL v15 keeps API 1 compatibility and supports addon discovery for third-party mods.
-
-With Arsenal's default priority behavior, place **Bingus Shared Loader at the bottom of the mod list** so it loads last / has the final effective override priority.
+The installation ZIP is shared by GitHub Release and Nexus Main File. No external script configurator is included.
 
 ## Installation
-
-1. Close the game.
-2. Disable or remove every older DRIVER HUD version, including FRV / Resolver / Probe test builds.
-3. Import the current `DRIVER_HUD_1.3.4.zip` into Arsenal and enable **Core**.
-4. Install and enable **Bingus Shared Loader v15** separately.
-5. Keep BSL at the correct final priority.
-6. Run **Purge**, then **Deploy**.
-7. Launch the game.
-
-Do not enable multiple DRIVER HUD versions at the same time.
+1. Close the game. Disable/remove every earlier DRIVER HUD and all tank/FRV probes.
+2. Import DRIVER_HUD_1.4.1.zip directly into Arsenal and enable Core.
+3. Install/enable Bingus Shared Loader separately. Under Arsenal's default priority convention, put BSL at the bottom. With First-Mod Priority, use the equivalent final effective priority.
+4. Purge, then Deploy, then launch the game.
+Do not enable multiple DRIVER HUD/probe versions together.
 
 ## FRV HUD position and scale
-
-Normal users do not need to edit JSON files.
-
-1. Extract `DRIVER_HUD_1.3.4.zip` to any normal folder.
-2. Double-click `CONFIGURE_FRV_HUD.cmd`.
-3. Adjust horizontal position, vertical position, and scale.
-4. Click **Apply**.
-
-The configurator supports English and Chinese. If the game is already running, the FRV HUD normally picks up the new settings in about two seconds; no Purge, Deploy, or restart is required.
-
-The active configuration is stored at:
-
-```text
-%APPDATA%\Arrowhead\Helldivers2\frv_hud_position.json
-```
+Start the game once with the mod enabled. Then press Win+R and paste:
+%APPDATA%\Arrowhead\Helldivers2
+Open frv_hud_position.txt in Notepad. It contains English/Chinese instructions.
+Edit x, y and scale, save, and wait about two seconds in game.
+x: 0 = left, 1 = right. y: 0 = top, 1 = bottom. Coordinates refer to the HUD centre.
+scale: 0.5 to 2.0. Defaults: x=0.714, y=0.90, scale=1.
+Keep all three values. Invalid/incomplete edits keep the last valid position.
+The live file is OUTSIDE the ZIP. There is no need to extract the mod, modify the Arsenal package, confirm a ZIP update, Purge/Deploy, or restart the game when changing these three values.
+On first creation, valid settings from the old frv_hud_position.json are migrated. Once TXT exists, edit TXT only; the old configurator no longer controls this version. Updating the mod does not intentionally overwrite an existing TXT.
 
 ## Other configuration
+Optional driver_hud.cfg lives in the same AppData folder. A template is in the ZIP.
+Defaults: debug=true, offset_y=155, scale=1, alpha=0.76, perf=false, geometry_numbers=true.
+offset_y and scale affect the tank HUD; alpha affects both HUD styles.
+geometry_numbers=false restores the original numeric font.
+Restart the game after changes to driver_hud.cfg (unlike FRV position TXT).
 
-Optional `driver_hud.cfg` can be placed at:
+## Bug reports
+Please include mod/game version, vehicle, seat, host/client role, preceding actions, and a screenshot/video where useful.
+Current log: %APPDATA%\Arrowhead\Helldivers2\driver_hud.log
+Previous log: %APPDATA%\Arrowhead\Helldivers2\driver_hud_previous.log
+BSL log: %LOCALAPPDATA%\CowboyBingus\Helldivers2\Logs\BingusSharedLoader.log
+Please ZIP and share full logs privately. Game updates may require a compatibility update.
 
-```text
-%APPDATA%\Arrowhead\Helldivers2\driver_hud.cfg
-```
-
-Default values:
-
-```text
-debug=true
-perf=false
-offset_y=155
-scale=1
-alpha=0.76
-```
-
-- `offset_y` / `scale` control the Bastion HUD.
-- FRV position and size use the separate configurator.
-- `alpha` affects both HUD styles.
-- Restart the game after editing `driver_hud.cfg`.
-
-## Logs and bug reports
-
-DRIVER HUD keeps the current and previous game-process logs:
-
-```text
-%APPDATA%\Arrowhead\Helldivers2\driver_hud.log
-%APPDATA%\Arrowhead\Helldivers2\driver_hud_previous.log
-```
-
-BSL log:
-
-```text
-%LOCALAPPDATA%\CowboyBingus\Helldivers2\Logs\BingusSharedLoader.log
-```
-
-When reporting an issue, include the DRIVER HUD version, game version, vehicle, seat, host/client status, whether you switched vehicles or seats, and the action sequence immediately before the problem. Please share complete logs privately when possible.
-
-## Building from source
-
-The repository contains the editable Lua source, build script, package template, and focused tests used for the release.
-
-```text
-python build.py dist/DRIVER_HUD_1.3.4.zip
-```
-
-The build script assembles `driver_hud.lua` from the 1.2.1 Bastion baseline plus the current FRV/runtime modules, writes the patch payload, and packages the contents of `package/`.
-
-Useful source locations:
-
-```text
-src/native_reader.lua       version-scoped read-only native vehicle/Health reader
-src/frv_runtime.lua         FRV identity, Health, precision, and wheel-state model
-src/frv_ui.lua              FRV geometry and rendering
-src/position_config.lua     FRV position/scale configuration
-src/log_session.lua         per-game-process log rotation
-tests/                      focused offline tests
-package/                    release-package template
-```
-
-No game DLLs, process dumps, third-party loaders, or font files are included in this repository.
-
-## Development note
-
-The FRV reader uses version-scoped game structures and is designed to fail closed when its compatibility guards do not match. A Helldivers 2 update can therefore require a DRIVER HUD compatibility update even when the UI code itself has not changed.
-
-## Open source and credits
-
-Project-owned source code is released under the **MIT License**. Third-party assets and materials retain their original permissions; see [CREDITS.txt](CREDITS.txt).
-
-Key dependency / reference credits:
-
-- **CowboyBingus** — Bingus Shared Loader.
-- **DDRK1NG** — HD2 HUD+, used as an important reference during early HUD/bootstrap research; relevant reused material remains separately credited in `CREDITS.txt`.
-
-Helldivers 2 and its game assets, names, interfaces, and identifiers belong to their respective owners. This project is not affiliated with Arrowhead Game Studios or Sony Interactive Entertainment.
-
-## 1.3.4 performance pass
-
-Stable native-bound ownership scans run at about 5 Hz. Redundant tank binding reads are skipped; native protection metadata is reused only within one synchronous sample. Tank ammunition logic/cadence, FRV health cadence and rendering are unchanged. Optional `perf=true` diagnostics require `debug=true` and a restart.
-
-GitHub release downloads include the configurator. Nexus Main Files exclude it; download **FRV HUD Position Configurator 1.0** separately from Optional Files. The configurator is not an Arsenal mod.
-
-Validation: 33 focused offline LuaJIT checks. No live HD2 FPS result is claimed. See `docs/PERFORMANCE_说明.txt` and `evidence/performance_validation.txt`.
-
-Run the current performance checks with Python and `lupa` installed:
-
-```sh
-python tests/test_performance.py
-```
+Project code: MIT. See CREDITS.txt for third-party attribution.

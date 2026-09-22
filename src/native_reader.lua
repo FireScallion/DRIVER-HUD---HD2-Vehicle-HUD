@@ -1,9 +1,10 @@
 -- Version-scoped, identity-keyed readers. Only the Win32 adapter reads memory.
 -- Pure Lua byte decoding avoids rounding uint64 resource IDs through doubles.
 local Native = (function()
- local N={version='r3-cc75948d',ready=false,next_check=0}
- N.roots={network=0x276F0C0,health=0x276C3B8,synced=0x276C9B0,seater=0x276CA88}
- N.pe={machine=0x8664,sections=16,timestamp=0x6A86132E,size=0x3A6B000,checksum=0xEE0D37}
+ local N={version='r4-73374bd4',ready=false,next_check=0}
+ -- 2026-09-22 build: roots AND Health/network/settings layouts were re-derived.
+ N.roots={network=0x346BF98,health=0x3326688,synced=0x3326C98,seater=0x3326D78}
+ N.pe={machine=0x8664,sections=16,timestamp=0x6AA96B14,size=0x4770000,checksum=0xF05B12}
  local function u32(s,o)
   local a,b,c,d=s:byte(o+1,o+4)
   if not d then error('short uint32',0) end
@@ -106,9 +107,9 @@ local Native = (function()
  N.same=same
  function G:net(root,key,by_entity)
   if key==4294967295 or (not by_entity and key==32767) then return nil end
-  local j=self:lookup(self:table(root+(by_entity and 0xF19A70 or 0xF21A88)),key)
+  local j=self:lookup(self:table(root+(by_entity and 0xF1AEB0 or 0xF22EC8)),key)
   if j==nil then return nil end
-  local d=self:descriptor(root+0xF31AD8+j*24)
+  local d=self:descriptor(root+0xF32F18+j*24)
   if (by_entity and d.entity or d.goid)~=key then error('network key mismatch',0) end
   return d
  end
@@ -157,7 +158,7 @@ local Native = (function()
   local live=self:net(net,collection.entity,true)
   if not same(live,collection) then error('proxy identity changed before resolve',0) end
   self:roundtrip(net,live)
-  local t=self:table(hm+0x28)
+  local t=self:table(hm+0x1030)
   if t.capacity==0 then return nil,{reason='Health table empty',capacity=0,entries=0,candidates=0} end
   if t.capacity>4096 then error('Health table too large for proxy resolver',0) end
   local bytes=t.capacity*8;local raw={};local off=0
@@ -166,7 +167,7 @@ local Native = (function()
    raw[#raw+1]=self:watch(t.entries+off,n);off=off+n
   end
   raw=table.concat(raw)
-  local descs=ptr(self:watch(hm+0x40,8),0)
+  local descs=ptr(self:watch(hm+0x1048,8),0)
   local entries,candidates=0,{}
   for pos=0,#raw-8,8 do
    local entity,j=u32(raw,pos),u32(raw,pos+4)
@@ -187,16 +188,16 @@ local Native = (function()
   self:validate();return nil,meta
  end
  function G:configuration(net,hm,d,expected_zones)
-  local j=self:lookup(self:table(hm+0x68),d.entity);local cfg
-  if j~=nil then cfg=ptr(self:watch(hm+0xA8,8),0)+j*0x5650
+  local j=self:lookup(self:table(hm+0x1070),d.entity);local cfg
+  if j~=nil then cfg=ptr(self:watch(hm+0x10B0,8),0)+j*0x5650
   else
-   local t=ptr(self:watch(net+0xF11738,8),0)
-   local start=mod64hex(d.resource,984)
+   local t=ptr(self:watch(net+0xF12B78,8),0)
+   local start=mod64hex(d.resource,1002)
    for step=0,63 do
-    local b=self:watch(t+((start+step)%984)*16,16);local key=hex64(b,0)
+    local b=self:watch(t+((start+step)%1002)*16,16);local key=hex64(b,0)
     if key==d.resource then
-     local k=u32(b,8);if k>=984 then error('Health settings index',0) end
-     cfg=t+0x3D80+k*0x5650;break
+     local k=u32(b,8);if k>=1002 then error('Health settings index',0) end
+     cfg=t+0x3EA0+k*0x5650;break
     elseif key=='0000000000000000' then break end
    end
   end
@@ -224,9 +225,9 @@ local Native = (function()
  function G:health(d,expected_zones)
   local net,hm=self:root('network'),self:root('health')
   self:roundtrip(net,d)
-  local hi,hd=self:component(hm,d.entity,0x28,0x40)
+  local hi,hd=self:component(hm,d.entity,0x1030,0x1048)
   if hi==nil or not same(hd,d) then error('no matching Health component',0) end
-  local hpbase=ptr(self:watch(hm+0x50,8),0)
+  local hpbase=ptr(self:watch(hm+0x1058,8),0)
   local record=hpbase+hi*0x1B8
   local data=self:read(record,0x1B8)
   local max=self:configuration(net,hm,hd,expected_zones)
@@ -275,7 +276,22 @@ local Native = (function()
   for i=0,3 do out.cache[i+1]=i32(cache,4*i) end
   self:validate();return out
  end
- N.guards={{0xd3e734,"4c8b1d8509a301448bc24c8bc981faff7f000075108b055d8ea4018901488bc1"},{0x634244,"4c8b1d4d88130245896f1041c7471cffffffff41893f3b3d002a1502"},{0x9171b7,"488b4d408bd8488b0cd9e87ab6beff4869cbb8010000488b5c243048034d50488b6c243848056802000039307426ff"},{0x6aaae8,"8b81f80000004189028b81fc000000418942048b8100010000418942088b81040100004189420c"},{0x6ac968,"488d144048c1e20641ffd18b0b33d2488943404c8d0449488bc849c1e006e855ba72"},{0x6ab270,"478b4cb4048d4bfc448b97d8fdffff418bc1d3e80f57c983e003f3480f2ac8f30f5eca4183fa"}}
+ N.guards={
+  {0xfd9ba4,"4c8b1ded234902448bc24c8bc981faff7f000075108b05ada94a028901488bc14883c408c3458b93d02ef20033d248895c2410418b9bd82ef20048896c2418410fafd8418d6aff488974242048893c244585d27436498bbbc82ef200418bb3d42ef200"}, -- network_reverse_root_and_table
+  {0xfd9a70,"458b8ab8aef100458b9ac0aef100440fafd9418d71ff4585c97435498b9ab0aef100418bbabcaef100"}, -- network_forward_table
+  {0xfd9d15,"8b4004488d0440488d80e3651e00498d04c2"}, -- network_descriptor_array
+  {0x4a8a0a,"4c8b1567e3e7027512b8ffffffff48c1e006490342484883c408c3458b4a284533c048895c2410418b5a30"}, -- seater_manager_root_stride
+  {0x63a8db,"45896f1041c7471cffffffff41893f"}, -- seater_collection_assignment
+  {0x92161f,"488b2d6250a0027507b8ffffffffeb58448b8d381000008bcf448b9540100000440fafd24c89742440458d71ff4585c9742c4c8b9d30100000"}, -- health_manager_root_and_table
+  {0x921687,"488b8d481000008bd8488b0cd9e88762beff4869cbb8010000488b5c243048038d58100000488b6c243848056802000039307426ffc748052802000083ff2672ef"}, -- health_descriptor_runtime_zone_layout
+  {0x507435,"488b055c4bf602448bc14c8b90782bf10048b83366582707ea9e0548f7e1488bc1482bc248d1e84803c248c1e80969c0ea030000442bc0"}, -- health_settings_table_modulus
+  {0x5074ae,"8b48084869c1505600004805a03e00004903c2"}, -- health_settings_record_base
+  {0x5079d2,"4869c050560000490383b0100000"}, -- health_override_array
+  {0x6b1dbe,"488b3dd34ec7027457448b5f28458bc88b5f300fafd8458d73ff4585db7441488b77208b6f2c"}, -- synced_manager_root_and_table
+  {0x6b1ead,"4869c8b801000048038e581000008b81f80000004189028b81fc000000418942048b8100010000418942088b81040100004189420c"}, -- health_to_synced_copy
+  {0x6b2957,"8bd58bf548c1e60449037650"}, -- synced_replicated_stride
+  {0x6b26e5,"448b178d4bfe418bc10f57c9d3e883e003f3480f2ac8f30f5eca4183faff7504448b5614418d5001418bc8c1ea058bc2c1e0052bc8498b54d5208d0c4d0200000048d3eaf6c203751866410f6ec20f5bc0f30f59c1f30f2cc0"}, -- q2_and_damage_independent
+ }
  function N.check_module(read,base)
   local b=read(base,512)
   if not b or #b~=512 or b:sub(1,2)~='MZ' then return false,'module header unreadable' end
@@ -290,7 +306,7 @@ local Native = (function()
    local want=v[2]:gsub('..',function(h)return string.char(tonumber(h,16))end)
    if read(base+v[1],#want)~=want then return false,string.format('native code guard 0x%X',v[1]) end
   end
-  return true,'PE+6 reviewed code guards'
+  return true,'PE+'..#N.guards..' reviewed code guards'
  end
  function N.open_win32()
   local ok,ffi=pcall(require,'ffi')

@@ -1,0 +1,144 @@
+{
+  "archive": "DRIVER_HUD_1.4.1.zip",
+  "sha256": "ae98691c8cdd23a34e0f5ed89c23a3a319850f1322de456da2235233e5e2b47a",
+  "checks": [
+    {
+      "name": "ZIP CRC",
+      "pass": true
+    },
+    {
+      "name": "unique paths",
+      "pass": true
+    },
+    {
+      "name": "no path traversal",
+      "pass": true
+    },
+    {
+      "name": "install/help assets present",
+      "pass": true
+    },
+    {
+      "name": "no script configurator",
+      "pass": true
+    },
+    {
+      "name": "no competing config inside archive",
+      "pass": true
+    },
+    {
+      "name": "hotfix manifest GUID",
+      "pass": true
+    },
+    {
+      "name": "correct version name",
+      "pass": true
+    },
+    {
+      "name": "Arsenal only deploys CORE",
+      "pass": true
+    },
+    {
+      "name": "192-byte header followed by exact built Lua",
+      "pass": true
+    },
+    {
+      "name": "both binary lengths",
+      "pass": true
+    },
+    {
+      "name": "all remaining binary header bytes preserved",
+      "pass": true
+    },
+    {
+      "name": "strict UTF8 payload",
+      "pass": true
+    },
+    {
+      "name": "runtime version labels",
+      "pass": true
+    },
+    {
+      "name": "no probe telemetry",
+      "pass": true
+    },
+    {
+      "name": "bounded combined new weapon cadence",
+      "pass": true
+    },
+    {
+      "name": "explicit Hull child refs",
+      "pass": true
+    },
+    {
+      "name": "new module has no GOID subtraction binding",
+      "pass": true
+    },
+    {
+      "name": "new module has no unknown targeted getter",
+      "pass": true
+    },
+    {
+      "name": "no world/global discovery in new module",
+      "pass": true
+    },
+    {
+      "name": "reload overlay isolated",
+      "pass": true
+    },
+    {
+      "name": "TXT hot reload plus migration",
+      "pass": true
+    },
+    {
+      "name": "configuration is data-only",
+      "pass": true
+    },
+    {
+      "name": "material/aux assets byte-identical",
+      "pass": true
+    },
+    {
+      "name": "no DLL/dump/font distribution",
+      "pass": true
+    },
+    {
+      "name": "bilingual TXT instructions",
+      "pass": true
+    },
+    {
+      "name": "previous log documented",
+      "pass": true
+    },
+    {
+      "name": "geometry option retained",
+      "pass": true
+    },
+    {
+      "name": "unknown/stale reload documented",
+      "pass": true
+    },
+    {
+      "name": "validation scope limitation present",
+      "pass": true
+    },
+    {
+      "name": "stage equals installed files",
+      "pass": true
+    },
+    {
+      "name": "native guard contract retained",
+      "pass": true
+    },
+    {
+      "name": "per-wheel fault isolation retained",
+      "pass": true
+    },
+    {
+      "name": "third-party credits retained",
+      "pass": true
+    }
+  ],
+  "total": 34,
+  "fails": 0
+}

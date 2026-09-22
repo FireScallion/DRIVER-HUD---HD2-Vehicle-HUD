@@ -1,0 +1,13 @@
+PASS previous log path
+PASS process id
+PASS process creation time
+PASS persistent session marker
+PASS same-process reload
+PASS new-session header
+PASS fail-safe no process identity
+PASS rotation before normal start
+PASS installed payload contains rotation
+PASS installed payload equals tested source
+PASS CN docs mention previous log
+PASS EN docs mention previous log
+RESULT LOG_ROTATION checks=12 fails=0

@@ -1,0 +1,35 @@
+PASS new driver direct entry: HP, 300 rounds, 6 belts, two racks
+PASS new direct gunner entry uses same model without visiting driver
+PASS no unknown targeted reads, no new tank FRV proxy enumeration
+PASS non-adjacent explicit child IDs are discovered and classified
+PASS unreferenced same-shape neighbouring weapon is never read
+DETAIL new_tank_10_seconds total_batches=146 gatling=48 racks=24/24
+PASS combined steady weapon budget <=10Hz and total new batches <=16Hz
+PASS single NIL / long GAP preserve valid ammunition, never set zero
+PASS late remote snapshot reconciles jump without predicted rounds
+PASS empty belt does not begin an automatic reload
+PASS partial-belt R, pause, resume and completion use authoritative reserve
+PASS same-instance exit/re-entry preserves known paused progress, but not ammo cache
+PASS joining unknown already-paused reload does not fabricate percentage
+PASS long reload-state gap holds uncertain, timer never grants ammunition
+PASS unknown reload state degrades ring only, not ammo or body
+PASS missile total follows each independent rack, bad rack not coerced to zero
+PASS one removed child loses its channel, not body or other rack/gun
+PASS explicit changed child references discard old ammo immediately
+PASS malformed child list fails closed without hiding vehicle HP
+PASS two tanks and resource/GOID reuse cannot share ammunition
+PASS new -> old -> FRV -> new clears variant/ring geometry
+PASS old reload keeps original 31/2000 readers and post-commit phase
+PASS old interrupted state0 empty stays paused until nonzero resume
+PASS static new HUD is retained at 144Hz; ring never rebuilds static IDs
+PASS cursor hide, resize, exit clean all static and dynamic primitives
+PASS changed session/avatar cannot recover another context reload cache
+PASS slow frame has no catch-up sampling burst
+PASS sparse telemetry with missing signature fields retains the valid channel
+PASS driver leaving during another gunner reload never restores invented paused time
+PASS changed reserve while away invalidates the old reload cycle
+PASS ring reaching its expected duration never commits a reload
+PASS stale parent references suspend child reads rather than chase reused IDs
+PASS missing parent reference field is unavailable, not explicit weapon removal
+PASS partial child table without final field retains old valid sample
+RESULT TANK_1_4_0 cases=33 assertions=1057 fails=0

@@ -1,4 +1,4 @@
-"""Render real emitted triangle commands, with a substitute preview font."""
+"""Render real emitted triangle commands. Substitute font is only used for headings."""
 from pathlib import Path
 import json, html
 from PIL import Image,ImageDraw,ImageFont
@@ -35,5 +35,5 @@ for c,title in zip(cases,labels):
  im=im.convert('RGB').resize((W,H),Image.Resampling.LANCZOS);cards.append(im)
 for j,im in enumerate(cards):canvas.paste(im,(W*j,0))
 canvas.save(ROOT/'evidence/frv_ui_preview.png')
-text='''<!doctype html><html lang="zh-CN"><meta charset="utf-8"><title>DRIVER HUD 1.3.0 离线UI预览</title><style>body{background:#171b22;color:#dde3ea;font:16px system-ui;margin:40px}img{max-width:100%;height:auto}p{max-width:1000px;line-height:1.8}</style><h1>DRIVER HUD 1.3.0 · FRV</h1><img src="frv_ui_preview.png"><p>从正式 Lua 绘制函数输出的三角形生成。此图为离线检查，不是游戏截图；数字使用预览字体，游戏实际使用自身 debug 字体与 text_extents 居中。</p><p>顺序：健康；车体 50%（黄色）；车体 25%（红色，低耐久轮胎仍存在）；左前/右后轮彻底摧毁（对应轮毂）。没有轮胎数值标签、三段式分隔或车体数字背景块。</p></html>'''
+text='''<!doctype html><html lang="zh-CN"><meta charset="utf-8"><title>DRIVER HUD 1.3.5 离线UI预览</title><style>body{background:#171b22;color:#dde3ea;font:16px system-ui;margin:40px}img{max-width:100%;height:auto}p{max-width:1000px;line-height:1.8}</style><h1>DRIVER HUD 1.3.5 · FRV</h1><img src="frv_ui_preview.png"><p>从正式 Lua 绘制函数输出的三角形生成。此图为离线检查，不是游戏截图；HUD 数字也来自实际几何绘制命令，不是替代字体。此图未模拟游戏 HUD 曲率。</p><p>顺序：健康；车体 75%（黄色）；车体 50%（红色，低耐久轮胎仍存在）；左前/右后轮彻底摧毁（对应轮毂）。没有轮胎数值标签、三段式分隔或车体数字背景块。</p></html>'''
 (ROOT/'evidence/UI_PREVIEW.html').write_text(text,encoding='utf-8')

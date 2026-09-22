@@ -1,0 +1,3 @@
+DRIVER HUD 1.4.1
+GUID=4d9e465c-8d42-4be1-91f6-31a8b3e86140
+Expected log marker: DRIVER_HUD 1.4.1 START

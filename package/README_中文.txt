@@ -1,64 +1,54 @@
-DRIVER HUD 1.3.4 — 坦克与 FRV HUD
+DRIVER HUD 1.4.1
 
-功能
-• 堡垒坦克：显示车体血量、主炮弹药、同轴机枪弹药与中心准星。
-  主炮满弹为 31 发（30+1）。支持驾驶位与炮手位。
-• 机枪 FRV、补给 FRV：显示车体血量数字与四个轮胎的内部连续耐久条。
-  不显示单个轮胎的血量数字。四轮按车辆朝前时的左前、右前、左后、右后排列。
-• FRV 车体轮廓、车窗轮廓及车体血量数字：高于 75% 为白色，≤75% 为黄色，≤50% 为红色。
-• FRV HUD 的屏幕位置与缩放可通过随包附带的图形配置器调整。
+绝地潜兵 2 载具状态 HUD。需要单独安装 Bingus Shared Loader v15 / API 1。
 
-安装（Arsenal）
-1. 禁用或删除所有旧 DRIVER HUD，包括各类 FRV / Resolver / Probe 测试分支。
-   同时启用多个版本会冲突，不要叠加安装。
-2. 导入 DRIVER_HUD_1.3.4.zip，并启用 Core。
-3. 单独安装并启用 Bingus Shared Loader v15（BSL，API 1）。本包不包含 BSL。
-4. 默认加载优先级下，将 BSL 放在列表最下方并最后加载。
-   若启用了 First-Mod Priority，请反向调整，确保 BSL 获得最终覆盖优先级。
-5. Purge，然后 Deploy，再启动游戏。
+支持内容
+原版堡垒坦克：车体生命值、主炮弹药（30+1）、同轴机枪弹药，以及主炮装填提示环。
+加特林／导弹坦克：车体生命值、300 发当前弹链条、下方 6 格备用弹链、两侧导弹架合计余弹，以及加特林装填提示环。加特林在左、导弹在右；原版坦克布局不改。
+机枪 FRV／补给 FRV：车体生命值、各轮胎耐久及损毁表现，保留原有配色规则。
+本 MOD 只显示游戏状态，不修改生命值、弹药、伤害或装填规则。
+
+安装
+1. 关闭游戏，禁用或移除所有旧 DRIVER HUD 和坦克／FRV Probe 测试版。
+2. 将 DRIVER_HUD_1.4.1.zip 直接导入 Arsenal，启用 Core。
+3. 单独安装并启用 Bingus Shared Loader。Arsenal 默认优先级下把 BSL 放在最底部；启用 First-Mod Priority 时按对应规则调整最终有效优先级。
+4. Purge → Deploy → 启动游戏。
+不要同时启用多个 DRIVER HUD 或探针。
+本安装包同时用于 GitHub Release 和 Nexus Main File，无需分离配置器。
 
 FRV HUD位置修改
-不需要手动打开或编辑 JSON 文件。
-
-1. 将 DRIVER_HUD_1.3.4.zip 解压到任意普通文件夹。
-2. 双击根目录的 CONFIGURE_FRV_HUD.cmd。
-3. 在弹出的窗口中调整：
-   • 水平位置
-   • 垂直位置
-   • 缩放
-   也可以使用“向左 / 向右 / 向上 / 向下”按钮进行小步移动。
-4. 点击“应用”。正在运行的 HUD 约 2 秒后会读取新设置，无需 Purge、Deploy 或重启游戏。
-5. “恢复默认”会把窗口中的参数恢复为默认值；再点击“应用”即可保存。
-
-配置器会根据 Windows 语言自动显示中文或英文，也可以在窗口右上角手动切换语言。
-无需管理员权限，也不需要 VS Code、Python 或额外软件。
-实际配置保存在：
-  %APPDATA%\Arrowhead\Helldivers2\frv_hud_position.json
-一般用户无需直接编辑这个文件。
+不再需要 CMD、PowerShell 或图形调整工具。
+启用本 MOD 启动游戏一次后，按 Win+R，粘贴：
+%APPDATA%\Arrowhead\Helldivers2
+用记事本打开 frv_hud_position.txt，里面已有中英文说明。
+修改 x、y、scale 后保存，约两秒可在游戏内看到效果。
+x：0 为最左，1 为最右。y：0 为顶部，1 为底部。两者指 HUD 中心位置。
+scale：大小范围 0.5～2.0。默认 x=0.714、y=0.90、scale=1。
+保留三个设置项；缺项、越界或格式错误时，继续使用上次有效设置。
+实际配置在 AppData，不在 ZIP 内。直接导入 Arsenal 的玩家也能保存设置；无需解压 MOD、修改压缩包、确认 ZIP 内文件更新，也不用重新部署或重启游戏。
+首次创建 TXT 时会迁移旧 frv_hud_position.json 的有效数值。之后只编辑 TXT，旧图形工具不再控制此版本。更新 MOD 不会主动覆盖已有 TXT。
 
 其他配置
-旧 driver_hud.cfg 仍可放在：
-  %APPDATA%\Arrowhead\Helldivers2\driver_hud.cfg
-默认 debug=true、offset_y=155、scale=1、alpha=0.76。
-offset_y/scale 控制坦克 HUD；FRV 的位置与大小使用独立配置器；alpha 影响两套 HUD。
-driver_hud.cfg 修改后重启游戏。
+同一 AppData 目录可放置 driver_hud.cfg；安装 ZIP 中提供模板。
+默认：debug=true、offset_y=155、scale=1、alpha=0.76、perf=false、geometry_numbers=true。
+offset_y、scale 控制坦克 HUD；alpha 控制两种 HUD 的透明度。
+geometry_numbers=false 恢复原来的数字字体。
+修改 driver_hud.cfg 后需重启游戏；FRV 位置 TXT 则无需重启。
+
+读数与装填提示
+弹药读数允许分段变化；读取缺失不代表零弹药。
+变暗并带虚线下划线的弹药条／数字表示“最近一次有效读数”，不是新读数。
+装填环跟随实际观察到的装填状态；弹药归零不会自动启动环。
+已观察到的暂停保留进度，重新入座不会让暂停的装填自动继续。
+首次进入时若无法知道已有装填进度，使用静态点状环，不编造百分比。长时间缺失状态时保持提示，不假装装填完成。环形计时绝不补弹或扣备用弹链。
 
 问题反馈
-日志：
-  %APPDATA%\Arrowhead\Helldivers2\driver_hud.log            当前游戏进程
-  %APPDATA%\Arrowhead\Helldivers2\driver_hud_previous.log   上一次游戏进程
-每次新启动 helldivers2.exe 时只轮转一次；同一游戏进程内 Mod/Lua 重载继续追加当前日志。
-若问题发生在刚刚结束的上一局，请同时提交 driver_hud_previous.log。
+请说明 MOD／游戏版本、载具、座位、房主或加入者、出问题前的操作，尽量附截图或视频。
+当前日志：%APPDATA%\Arrowhead\Helldivers2\driver_hud.log
+上次日志：%APPDATA%\Arrowhead\Helldivers2\driver_hud_previous.log
+BSL 日志：%LOCALAPPDATA%\CowboyBingus\Helldivers2\Logs\BingusSharedLoader.log
+请把完整日志打包后私信。游戏更新后可能需要兼容性修正。
 
-BSL 日志：
-  %LOCALAPPDATA%\CowboyBingus\Helldivers2\Logs\BingusSharedLoader.log
-
-请说明游戏版本、车型、座位、房主/客户端、是否换过车，以及问题发生前的操作顺序。
-保持 debug=true 方便排查。日志请私下提交。
-
-开源与署名
-项目自有代码沿用 MIT License；第三方材质及内容保留其原许可条件。
-Source repository: https://github.com/FireScallion/DRIVER-HUD---HD2-Vehicle-HUD
-第三方来源与鸣谢见 CREDITS.txt。本包不包含游戏 DLL、转储、第三方加载器或字体文件。
-
-性能统计默认 perf=false；需要诊断时与 debug=true 一起开启并重启。详见 PERFORMANCE_说明.txt。
+本次验证范围
+1.4.1 将已完成实机验证的 1.4.0-HF1 热修正式化：坦克 HUD 已恢复显示，装填环已移动到可装填武器图标左侧。离线回归已重新执行；完整多人组合与 FPS 基准仍不属于自动测试范围。
+项目代码采用 MIT 许可；第三方署名见 CREDITS.txt。

@@ -1,0 +1,3 @@
+DETAIL replay new rows=338 commits=3 pauses=1 resumes=1
+DETAIL replay old rows=18 commits=4 pauses=1 resumes=1
+RESULT TANK_CAPTURE_REPLAY transitions=356 fails=0

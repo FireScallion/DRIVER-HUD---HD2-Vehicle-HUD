@@ -1,0 +1,19 @@
+PASS new PE and four independently expected roots
+PASS each of the 14 code guards independently rejects mismatch and truncation
+PASS new Health fields work while all obsolete fields are poison
+PASS new settings table includes slot and record index 1001
+PASS 1002-slot settings probing wraps from last slot to zero
+PASS entity-specific Health override uses new index and array fields
+PASS new Health proxy enumeration still rejects ambiguous same-unit owners
+PASS production module layout does not round-trip unrelated dense indices
+PASS default FRV and tank numeric paths do not call the font API
+PASS geometry bounds center actual narrow digits, zero, slash and unknown
+PASS geometric FRV label matches body center and warning colors
+PASS only body numerals are emitted for FRV, tires remain graphical and hub independent
+PASS tank HP, main and coax numbers retain layout and no text overlap at normal capacities
+PASS retained geometry is not recreated on unchanged frames and is cleared on vehicle switch and exit
+PASS geometry labels follow FRV screen placement and scale at common resolutions
+PASS native font opt-out remains available in both HUDs
+PASS unsupported label and invalid size fail before emitting partial geometry
+PASS startup config parses explicit false and ignores malformed numeric-mode settings
+RESULT UPDATE_1_3_5 cases=18 assertions=15253 fails=0

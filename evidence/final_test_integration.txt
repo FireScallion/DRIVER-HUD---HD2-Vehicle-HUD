@@ -1,0 +1,51 @@
+PASS native table uses full entity and separate dense index domains
+PASS native proxy resolves only unique same-unit known FRV Health owner
+PASS native same-model simultaneous entities have isolated wheel HP
+PASS native dense compaction re-resolves pointer and index
+PASS native owner mismatch fails closed
+PASS native reverse mapping mismatch fails closed
+PASS native unknown zone configuration rejected
+PASS native out-of-range wheel HP invalidates only that wheel
+PASS native local/remote precision distinct and q2 low-byte decode
+PASS native damage words are independent of HP and q2
+PASS native absent synced component keeps damage but unknown precision
+PASS native collection zero means empty, no nearest fallback
+PASS native watches detect an owner change after initial read
+PASS native table non-power-two and short reads rejected
+PASS native budget and noncanonical pointer rejected
+PASS native hash multiplication does not lose low bits in double arithmetic
+PASS module PE identity plus all reviewed exact code guards required
+PASS player GOID zero and HMG native seat show FRV, no numeric wheel HP
+PASS Supply driver/passenger share same entity and continuous HP
+PASS two identical FRVs switch by explicit identity without stale data
+PASS rear-seat proxy relation resolves exact FRV Hull and never uses proxy as Health owner
+PASS unresolved proxy stays hidden and cannot fall to nearby FRV
+PASS tank direct driver entry retains body main 31 and coax 2000
+PASS tank direct-to-gunner native identity does not require prior driving
+PASS tank to FRV to tank clears shared GUI and restores ammunition
+PASS native read failure cannot revive stale avatar tank ref after FRV
+PASS native initially unavailable retains 1.2.1 direct tank fallback
+PASS invalid schema rejects FRV and never falls through to tank
+PASS positive vehicle exit clears FRV immediately
+PASS missing seated data has bounded grace, not indefinite HUD
+PASS despawn and unsupported collection hide old HUD
+PASS session and avatar changes clear old identity before new read
+PASS health failure expires bars but retains valid body-only FRV
+PASS all four tire state2 and 0x02/0x80/0x82 mappings
+PASS q2 zero, HP zero, unknown state1 or state3 never invent destroyed
+PASS one invalid local wheel falls back to q2 without blanking other wheels
+PASS destroyed wheel remains hub even when raw HP is invalid
+PASS runtime Health sample with one invalid wheel keeps other three readable
+PASS body contour and number thresholds include exactly 75 and 50 percent
+PASS body number uses min+max bounds for exact x/y centering
+PASS Vector2 accessor-only text extents stay on the native font path
+PASS no text extents gracefully uses centered geometric body digits
+PASS cursor hides HUD, close cursor redraws without data changes
+PASS position data-only dictionary parsing and bounds
+PASS position hot reload applies after 2s and invalid file keeps last good
+PASS FRV position uses top-left fractions, is independent of tank scale
+PASS 10 Hz native poll remains useful at 10 FPS and batch cap respected
+PASS recoverable drawing errors never stop game original update
+PASS public reset closes native lifecycle state, not shadowed local
+PASS replay all 98 captured vehicle rows through production wheel model
+RESULT HUD_INTEGRATION cases=50 fails=0

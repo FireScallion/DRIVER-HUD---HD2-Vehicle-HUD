@@ -1,0 +1,9 @@
+PASS raw HP validity stored per wheel
+PASS no whole-sample HP range rejection
+PASS wheel model gates local exact HP per wheel
+PASS q2 fallback retained
+PASS destroyed state wins before HP validity
+PASS diagnostic validity bits
+PASS installed payload equals tested source
+PASS installed payload has fault isolation
+RESULT WHEEL_FAULT_ISOLATION checks=8 fails=0

@@ -1,0 +1,13 @@
+PASS first run creates bilingual external TXT, not ZIP/package edits
+PASS existing TXT never overwritten and three values applied together
+PASS old JSON migrates exactly once; subsequent JSON edits ignored
+PASS invalid legacy JSON uses defaults without executing contents
+PASS valid file hot reload waits two seconds, no redeploy
+PASS half-written, blank, duplicate or out-of-range TXT keeps last good
+PASS UTF-8 BOM / CRLF / inline comments and bilingual instructions accepted
+PASS Notepad UTF-16 LE and BE files parse correctly
+PASS permission error does not trigger truncating write or position reset
+PASS unwritable AppData does not stop HUD or overwrite legacy settings
+PASS deleting an active TXT retains current settings rather than stale JSON
+PASS oversized input / executable text rejected with no side effects
+RESULT POSITION_TXT cases=12 fails=0

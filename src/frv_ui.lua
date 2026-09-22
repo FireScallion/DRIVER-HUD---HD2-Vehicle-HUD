@@ -72,26 +72,10 @@ function FRV.layout(w,h)
  return x,y,s
 end
 function FRV.number_fallback(label,cx,cy,size,a,c)
- -- Last-resort geometric digits when the engine does not expose text extents.
- -- Their cell bounds are defined here, so centering is still exact, not guessed.
- local seg={{{0,1},{1,1}},{{1,1},{1,0.5}},{{1,0.5},{1,0}},{{0,0},{1,0}},{{0,0.5},{0,0}},{{0,1},{0,0.5}},{{0,0.5},{1,0.5}}}
- local map={['0']={1,2,3,4,5,6},['1']={2,3},['2']={1,2,7,5,4},['3']={1,2,7,3,4},['4']={6,7,2,3},['5']={1,6,7,3,4},['6']={1,6,7,5,3,4},['7']={1,2,3},['8']={1,2,3,4,5,6,7},['9']={1,2,3,4,6,7},['-']={7}}
- local cw,gap=size*0.43,size*0.2
- local minx,maxx=math.huge,-math.huge
- for i=1,#label do
-  for _,j in ipairs(map[label:sub(i,i)] or map['-']) do
-   for _,p in ipairs(seg[j]) do local x=(i-1)*(cw+gap)+p[1]*cw;minx=math.min(minx,x);maxx=math.max(maxx,x) end
-  end
- end
- local left=cx-(minx+maxx)*0.5
- for i=1,#label do
-  for _,j in ipairs(map[label:sub(i,i)] or map['-']) do
-   local p,q=seg[j][1],seg[j][2];local x=left+(i-1)*(cw+gap);local y=cy-size/2
-   FRV.line(x+p[1]*cw,y+p[2]*size,x+q[1]*cw,y+q[2]*size,size*0.085,a,c)
-  end
- end
+ return HudNumber.draw(label,cx,cy,size,a,c,'center')
 end
 function FRV.centered_number(label,cx,cy,size,a,c)
+ if C.geometry_numbers and HudNumber.draw(label,cx,cy,size,a,c,'center') then return end
  local font='core/performance_hud/debug'
  local low,high=call(Gui.text_extents,M.gui,label,font,size)
  if low and high then

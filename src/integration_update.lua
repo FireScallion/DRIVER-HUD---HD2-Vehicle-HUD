@@ -85,7 +85,7 @@ local function update(dt)
    pcall(clear)
    if M.clock>=(FRV.draw_error_at or 0) then log('FRV_DRAW_ERROR '..tostring(err));FRV.draw_error_at=M.clock+10 end
   end
- else draw(w,h) end
+ else Tank.draw(w,h) end
 end
 local old=rawget(_G,'update');if type(old)~='function' then return {installed=false} end
 rawset(_G,'__DRIVER_HUD_INSTALLED',true)

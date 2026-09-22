@@ -1,0 +1,17 @@
+PASS module pointer converted without precision loss
+PASS RPM copies exact length into owned buffer
+PASS partial reads rejected
+PASS guard pages rejected before RPM
+PASS NOACCESS rejected
+PASS uncommitted pages rejected
+PASS failed VirtualQuery rejected
+PASS read crossing unknown region rejected
+PASS null/unbounded read rejected
+PASS oversized request rejected
+PASS guarded cases never call RPM
+PASS new sample readable
+PASS same-sample read works
+PASS per-sample protection cache and profiler counters
+PASS cached protection never hides RPM short read
+PASS next sample invalidates protection cache
+RESULT WIN32_ADAPTER checks=16 fails=0 (MOCK_WIN32, OWNED_FFI_BUFFERS, runtime=Lua 5.3)

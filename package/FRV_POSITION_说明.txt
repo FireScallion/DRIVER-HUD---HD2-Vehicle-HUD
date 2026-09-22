@@ -1,0 +1,7 @@
+实际配置／Live configuration:
+%APPDATA%\Arrowhead\Helldivers2\frv_hud_position.txt
+
+启用 MOD 启动游戏一次即可生成。用记事本编辑该外部文件，约两秒生效。
+Run the game once with the mod enabled. Edit that external file in Notepad; changes apply in about two seconds.
+
+不要在 ZIP 中修改数值。／Do not edit configuration values inside the ZIP.

@@ -1,0 +1,56 @@
+{
+  "version": "1.4.0",
+  "tests": [
+    {
+      "test": "test_tank_1_4_0",
+      "result": "RESULT TANK_1_4_0 cases=33 assertions=1057 fails=0",
+      "runner": "TeX Lua 5.3 + compatibility environment adapter"
+    },
+    {
+      "test": "test_position_txt",
+      "result": "RESULT POSITION_TXT cases=12 fails=0",
+      "runner": "TeX Lua 5.3 + compatibility environment adapter"
+    },
+    {
+      "test": "test_tank_capture_replay",
+      "result": "RESULT TANK_CAPTURE_REPLAY transitions=356 fails=0",
+      "runner": "TeX Lua 5.3 + compatibility environment adapter"
+    },
+    {
+      "test": "test_integration",
+      "result": "RESULT HUD_INTEGRATION cases=50 fails=0",
+      "runner": "TeX Lua 5.3 + compatibility environment adapter"
+    },
+    {
+      "test": "test_robustness",
+      "result": "RESULT ROBUSTNESS cases=19 assertions=264 fails=0",
+      "runner": "TeX Lua 5.3 + compatibility environment adapter"
+    },
+    {
+      "test": "test_update_1_3_5",
+      "result": "RESULT UPDATE_1_3_5 cases=18 assertions=15253 fails=0",
+      "runner": "TeX Lua 5.3 + compatibility environment adapter"
+    },
+    {
+      "test": "test_performance",
+      "result": "RESULT PERFORMANCE_CONTRACT checks=17 fails=0 (SYNTHETIC, NOT FPS)",
+      "runner": "TeX Lua 5.3 + compatibility environment adapter"
+    },
+    {
+      "test": "test_win32_adapter",
+      "result": "RESULT WIN32_ADAPTER checks=16 fails=0 (MOCK_WIN32, OWNED_FFI_BUFFERS, runtime=Lua 5.3)",
+      "runner": "TeX Lua 5.3 + compatibility environment adapter"
+    }
+  ],
+  "preserved_source_sha256": {
+    "src/native_reader.lua": "844959cddb38a787f7358425729233c1e9729b2beb9872496337a982fa71264a",
+    "src/frv_ui.lua": "1511d79b20a8fed81df9ebbf67cfbf0ba33edc53208ed2f68461b29de083d904",
+    "src/hud_numbers.lua": "33108b82d052c61a3eaf59642940c770e03302a6df35fa6b4035dda8ea6a3965",
+    "baseline/driver_hud_1_2_1.lua": "e9c0db9217a5ee2cad3ba1d8baf094ec25e553606f3ecafa3dc1d64af2664197",
+    "baseline/9ba626afa44a3aa3.patch_0.header": "c2cd0b595cfc8a0353e3fc9f64c3b387ee87343809ae31d95b58b881e60550d7"
+  },
+  "live_game_tested": false,
+  "luajit_executed": false,
+  "test_runtime": "TeX Lua 5.3 with FFI and Lua 5.1 environment-loading compatibility runner",
+  "unknown_new_targeted_getters": false
+}

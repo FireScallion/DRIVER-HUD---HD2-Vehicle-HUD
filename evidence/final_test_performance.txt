@@ -1,0 +1,20 @@
+PASS adjacent and overlapping watches use one fresh read
+PASS coalescing still rejects mutation
+PASS stable ownership remains approximately 5 Hz
+PASS identity and native telemetry retain 10 Hz cap
+PASS render and original game update still run each frame
+PASS unchanged geometry creates no new retained objects
+PASS real telemetry change redraws
+PASS redraw retains no abandoned triangles
+PASS exit clears without waiting for ownership poll
+PASS reentry restores display
+PASS avatar change clears immediately
+PASS session reset remains immediate
+PASS ownership refresh failure clears
+PASS profiler crosses flush boundary without blocking update
+PASS stable Bastion avoids FRV table enumeration
+PASS stable tank geometry not rebuilt per frame
+PASS tank telemetry stays within its four-read, 10 Hz budget
+DETAIL tank_batched_reads_per_second=34
+DETAIL stable FRV live_triangles=148 native_calls_last_window=124
+RESULT PERFORMANCE_CONTRACT checks=17 fails=0 (SYNTHETIC, NOT FPS)

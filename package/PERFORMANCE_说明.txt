@@ -1,50 +1,29 @@
-DRIVER HUD 1.3.4 性能优化说明
+DRIVER HUD 1.3.5 — 调度与性能说明 / Scheduling notes
 
-安装：在 Arsenal 中禁用旧 DRIVER HUD，导入本 ZIP，启用 Core，按原 README 配置 BSL 后 Purge / Deploy。
-不要同时启用 1.3.3 和 1.3.4。配置器、材质和 manifest GUID 保持兼容。
-源码、测试与构建工具请下载独立 GitHub 源码包；Arsenal 的 Core 选项仅部署 CORE。
+1.3.5 保留 1.3.4 的调度优化；本次不是进一步降频。
+Stable ownership enumeration remains about 5 Hz. Relation and FRV Health polling
+remain about 10 Hz. Tank ammo sampling/counting logic is unchanged. Seat exit,
+avatar/session changes and rendering checks still run every update.
 
-本次改动
-1. 稳定 native 绑定乘车状态下，objects_owned_by 与结果表构造约 5 Hz。
-   步行、尚未绑定、旧版 fallback、读取错误宽限期间仍走原枚举节奏。
-   session/peer/world 变化立即清缓存；avatar、座位、对象存在性仍每帧检查。
-   所有权列表本身最多延迟约 0.2 秒更新，这是本次调度变化。
-2. 同一已验证坦克的重复绑定查询跳过，由原 refresh_bound 更新血量和弹药。
-   identity 变化仍先清旧坦克；初次直接进入炮手位仍走原获取路径。
-3. 同一次 native sample 内复用 VirtualQuery 返回的可读区域边界。
-   下一次 relation / health / proxy / module check 都重新查询。
-   不缓存游戏内存内容或动态组件指针；每次复制仍经过 ReadProcessMemory，并检查完整长度。
-4. 每轮 zone hash 与 max HP 合并读取。相邻/重叠身份校验范围合并新读取，逐一比较原始监视字节。
-   不扩大身份校验字段；不删除 roundtrip / owner / version / schema guards。
-5. 可选 PERF 统计，默认关闭；不改变 debug=true 默认值或现有日志轮转。
+图形只在数据或布局变化时重建；新几何数字也使用同一 retained GUI 生命周期。
+The geometry numeral option adds triangles to each rebuilt HUD, but unchanged
+frames do not recreate them. This is not a measured guarantee of unchanged FPS.
 
-调度与未改动项
-- 车辆身份 relation：原约 10 Hz。
-- FRV 血量/轮胎采样：原约 10 Hz。
-- 坦克主炮/同轴机枪：保持 1.3.3 原有约 10 Hz 调度和完整读取/计数逻辑。
-  本版没有解决或改变原有短脉冲采样行为，也未进一步降频。
-- 座位/下车/角色变化检查：每帧。
-- GUI：原每帧检查、数据变化才重绘；布局与图元完全未改。
-- JSON 配置热加载：原约 2 秒。
-- 已知坦克优先识别：1.3.3 已有，本版不重复实现。
+新版 native 布局已适配本次游戏构建；样本内可读区域检查缓存、RPM 完整长度检查、
+相邻身份监视项合并复查与全部身份校验均保留。
+Memory protection metadata is only cached for one synchronous sample. RPM still
+checks every copy. Dynamic game values and component addresses are not cached
+across samples as permanent identity.
 
-离线证据与限制
-33 项 LuaJIT 2.1 检查通过。覆盖核心/辅助读取故障、身份复核、退出/重进、
-角色/会话变化、所有权失败、坦克快速路径、可选性能统计与冻结代码比较。
-在同一模拟 FRV 内存布局中：RPM 63 -> 58；VirtualQuery 63 -> 20。
-查询次数不等于耗时比例，也不是游戏实测值。合并读取增加了少量读取字节数。
-本环境不能运行 Windows HD2；尚未实测 FPS、真实进程内存竞争、BSL 加载和画面。
-仍保留游戏版本锁；不支持原 1.3.3 不支持的 game.dll。
+测试是离线合成数据和 LuaJIT FFI 封装模拟，不是 Windows 游戏 FPS 测试。
+Developer tests: luajit tests/test_performance.lua .
 
-实机测试（建议相同场景、相同座位比较）
-先禁用旧版再测试新版：直接进坦克炮手位、驾驶位互换、连续开主炮/同轴、
-坦克换 FRV、FRV 各座位切换、轮胎损坏、下车。
-分别观察静止乘车与持续开火时的帧时间；不要只用不同战况下的 FPS 比较。
-若仍明显掉帧，在 %APPDATA%\Arrowhead\Helldivers2\driver_hud.cfg 中设：
+可选统计 / Optional diagnostics:
+  %APPDATA%\Arrowhead\Helldivers2\driver_hud.cfg
   debug=true
   perf=true
-重启游戏。车外、坦克、FRV 分别停留至少 20 秒，再提交 driver_hud.log。
-每约 10 秒一行 PERF：update_cpu_ms_avg/max 为 os.clock 的 HUD 更新耗时估计，
-rpm/virtual_query/bytes 为此窗口调用/请求字节计数；mode 是窗口结束时的状态。
-计时精度受平台 os.clock 限制；不含 GPU 渲染耗时或原游戏 update，不能当成总帧时间。
-混合上下车的窗口也不能代表单一车型。测试后设 perf=false 即可关闭。
+修改后重启。约每 10 秒写一条 PERF；统计的是 HUD 更新的 CPU 时间估计和内存
+读取请求次数，不包含 GPU 时间或原游戏 update。测试后改回 perf=false。
+
+Replace old DRIVER HUD versions rather than enabling them together.
+Do not disable game protection or elevate permissions to make this mod work.

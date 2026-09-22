@@ -1,6 +1,7 @@
 from pathlib import Path
 import sys,zipfile
 root=Path(__file__).resolve().parents[1]
+VERSION=(root/"VERSION").read_text().strip()
 source=(root/"driver_hud.lua").read_text(encoding="utf-8")
 checks={
  "raw HP validity stored per wheel":"local hp,hp_valid={},{}" in source and "hp_valid[i+1]=(v>=0 and v<=max[i+1])" in source,
@@ -10,7 +11,7 @@ checks={
  "destroyed state wins before HP validity":"if state==2 then return {kind='hub',state=2} end" in source,
  "diagnostic validity bits":"hp_valid='..valid_text" in source,
 }
-archive=Path(sys.argv[1]) if len(sys.argv)>1 else root/"DRIVER_HUD_1.3.2.zip"
+archive=Path(sys.argv[1]) if len(sys.argv)>1 else root/("DRIVER_HUD_"+VERSION+".zip")
 with zipfile.ZipFile(archive) as z:
  payload=z.read("CORE/9ba626afa44a3aa3.patch_0")[192:].decode("utf-8")
  checks["installed payload equals tested source"]=payload==source

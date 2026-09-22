@@ -1,0 +1,57 @@
+{
+  "version": "1.4.1",
+  "guid": "4d9e465c-8d42-4be1-91f6-31a8b3e86140",
+  "formalizes": "1.4.0-HF1",
+  "live_smoke": "user-confirmed tank HUD display after HF1 deployment; exhaustive multiplayer/FPS not claimed",
+  "install_zip_sha256": "ae98691c8cdd23a34e0f5ed89c23a3a319850f1322de456da2235233e5e2b47a",
+  "tests": [
+    {
+      "file": "final_test_release_1_4_1.txt",
+      "result": "RESULT RELEASE_1_4_1 checks=7 fails=0"
+    },
+    {
+      "file": "final_validate_package_1_4_1.txt",
+      "result": "RESULT PACKAGE checks=34 fails=0"
+    },
+    {
+      "file": "final_test_log_rotation_1_4_1.txt",
+      "result": "RESULT LOG_ROTATION checks=12 fails=0"
+    },
+    {
+      "file": "final_test_wheel_fault_isolation_1_4_1.txt",
+      "result": "RESULT WHEEL_FAULT_ISOLATION checks=8 fails=0"
+    },
+    {
+      "file": "final_test_tank_1_4_1.txt",
+      "result": "RESULT TANK_1_4_0 cases=33 assertions=1057 fails=0"
+    },
+    {
+      "file": "final_test_position_txt_1_4_1.txt",
+      "result": "RESULT POSITION_TXT cases=12 fails=0"
+    },
+    {
+      "file": "final_test_tank_capture_replay_1_4_1.txt",
+      "result": "RESULT TANK_CAPTURE_REPLAY transitions=356 fails=0"
+    },
+    {
+      "file": "final_test_integration_1_4_1.txt",
+      "result": "RESULT HUD_INTEGRATION cases=50 fails=0"
+    },
+    {
+      "file": "final_test_robustness_1_4_1.txt",
+      "result": "RESULT ROBUSTNESS cases=19 assertions=264 fails=0"
+    },
+    {
+      "file": "final_test_performance_1_4_1.txt",
+      "result": "RESULT PERFORMANCE_CONTRACT checks=17 fails=0 (SYNTHETIC, NOT FPS)"
+    },
+    {
+      "file": "final_test_update_1_3_5_on_1_4_1.txt",
+      "result": "RESULT UPDATE_1_3_5 cases=18 assertions=15253 fails=0"
+    },
+    {
+      "file": "final_test_win32_adapter_1_4_1.txt",
+      "result": "RESULT WIN32_ADAPTER checks=16 fails=0 (MOCK_WIN32, OWNED_FFI_BUFFERS, runtime=Lua 5.3)"
+    }
+  ]
+}

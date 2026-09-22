@@ -1,0 +1,20 @@
+PASS sync short reads at root/table/cache/q2 preserve core and no partial enrichment
+PASS sync wrong owner and independently changed watches do not poison core validation
+PASS sync failure cannot hide a concurrent core owner or configuration change
+PASS optional budget exhaustion reserves enough calls and bytes for core final validation
+PASS real relation wrapper classifies only plain short reads as transient
+PASS short read keeps FRV visible without refreshing uncertain identity and then recovers
+PASS grace does not renew on repeated misses and expires without another poll
+PASS tank grace freezes ammo display instead of refreshing an unconfirmed relation
+PASS positive exit/absence/context change/despawn cancels active grace
+PASS new identity after a short read never inherits damaged wheels from the old FRV
+PASS real relation observing a different collection before a late short read clears old HUD
+PASS proxy removal during grace clears the HUD even when its resolved Hull still exists
+PASS hard or unclassified failures never get grace or revive a stale tank reference
+PASS known Bastion driver/gunner and typed weapon skip FRV proxy enumeration
+PASS unknown FRV proxy retains precedence even if its fields resemble a tank
+PASS known tank temporary batch starvation neither invokes proxy nor loses binding
+PASS invalid GS body values fall back to this sample native body, valid GS zero wins
+PASS invalid body max/both sources stay unknown without hiding tires or reusing stale data
+PASS production graph-to-UI sync failure keeps body and hub, recovers normal tire bars
+RESULT ROBUSTNESS cases=19 assertions=264 fails=0
