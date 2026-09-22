@@ -38,10 +38,6 @@ The mod is **display-only**: it does not change vehicle health, damage, ammuniti
 - Center-screen vehicle reticle.
 - Manual reload behavior follows observed game state; empty ammunition alone does not make DRIVER HUD invent an automatic reload.
 
-The Gatling HUD deliberately does not try to display every individual round as a high-frequency changing number. Stable presentation and low polling cost are preferred over cosmetic per-shot precision.
-
-![Tank HUD preview](docs/tank_ui_preview.png)
-
 ### HMG FRV and Supply FRV
 
 - Vehicle body HP.
@@ -56,21 +52,6 @@ The Gatling HUD deliberately does not try to display every individual round as a
   - 50% or lower: red
 - Position and scale can be changed while the game is running through a simple external text file.
 
-![FRV HUD preview](docs/frv_ui_preview.png)
-
-## Reload and telemetry behavior
-
-DRIVER HUD treats game state as authoritative.
-
-- Missing readings are **not** converted to zero.
-- Short network gaps keep the last valid ammunition state instead of flashing or clearing the HUD.
-- A dimmed ammunition bar/count with a dotted underline means **last-known telemetry**, not a fresh sample.
-- Reload indicators start from observed reload state, not from `ammo == 0`.
-- A known interrupted reload retains its observed progress.
-- Re-entering a seat does not make DRIVER HUD automatically resume a paused reload.
-- If the exact beginning of an already-running reload was not observed, the HUD uses a static dotted ring instead of fabricating a percentage.
-- Long state gaps hold the reload presentation conservatively instead of falsely declaring the weapon ready.
-- The reload indicator never adds ammunition or spends reserve ammunition itself.
 
 ## Performance and stability
 
