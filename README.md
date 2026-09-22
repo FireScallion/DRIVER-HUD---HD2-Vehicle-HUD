@@ -9,16 +9,6 @@ DRIVER HUD adds compact status displays for both supported tank variants and the
 
 The mod is **display-only**: it does not change vehicle health, damage, ammunition capacity, reload rules, handling, weapon behavior, or other gameplay values.
 
-## What DRIVER HUD is trying to do
-
-DRIVER HUD is designed around three priorities:
-
-- **Useful information first.** Show the vehicle state that matters during combat without turning the screen into a spreadsheet.
-- **Stable presentation over fake precision.** If multiplayer telemetry arrives in steps, the HUD keeps the last valid state instead of flashing zero or aggressively polling just to make a number look continuous.
-- **Low overhead.** Stable vehicle bindings are sampled at bounded rates. Normal gameplay does not use the broad high-frequency discovery loops that were used by development probes.
-
-That design is especially visible on the Gatling tank: the current 300-round belt is represented as a bar instead of a rapidly changing round counter. The bar remains readable even when remote ammunition updates arrive in larger steps.
-
 ## Supported vehicles
 
 | Vehicle | HUD information |
