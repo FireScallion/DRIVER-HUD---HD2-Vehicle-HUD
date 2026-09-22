@@ -7,10 +7,12 @@ BASE=ROOT/'baseline'
 def assemble():
     source=(BASE/'driver_hud_1_2_1.lua').read_text(encoding='utf-8')
     source=source.replace('-- DRIVER HUD 1.2.1. Multi-Bastion binding hotfix; main gun is 30+1 (31 total); debug logging enabled by default.',
-        '-- DRIVER HUD 1.3.2. Tank + FRV integration with per-wheel Health fault isolation.')
-    source=source.replace("log('DRIVER_HUD 1.2.1 START')", "log('DRIVER_HUD 1.3.2 START native_contract=r3-cc75948d proxy_unit_health=1 wheel_fault_isolation=1')")
+        '-- DRIVER HUD 1.3.4. Tank + FRV integration with isolated telemetry and bounded read-error grace.')
+    source=source.replace("log('DRIVER_HUD 1.2.1 START')", "log('DRIVER_HUD 1.3.4 START native_contract=r3-cc75948d proxy_unit_health=1 wheel_fault_isolation=1 robustness_pass=1')")
     source=source.replace('local M={ids={}', 'local FRV -- Forward declaration for lifecycle reset.\nlocal M={ids={}',1)
     source=source.replace('local function full_reset()\n', "local function full_reset()\n if FRV then FRV.reset() end\n",1)
+    source=source.replace('local C={debug=true,','local C={perf=false,debug=true,',1)
+    source=source.replace("if k=='debug' then C.debug=v=='true'", "if k=='debug' or k=='perf' then C[k]=v=='true'",1)
     # Exact native identity is an additional acquisition seam, not a replacement
     # for any tank ammo/read/draw code. Its snapshot has already been rechecked.
     source=source.replace("and why~='local_gunner_owned_weapon' then return false end", "and why~='local_gunner_owned_weapon' and why~='native_seater' then return false end",1)
@@ -40,7 +42,7 @@ def build(destination=None):
     struct.pack_into('<I',header,160,len(payload)+8);struct.pack_into('<I',header,184,len(payload))
     stage=ROOT/'package';patch=stage/'CORE/9ba626afa44a3aa3.patch_0';patch.parent.mkdir(parents=True,exist_ok=True)
     patch.write_bytes(bytes(header)+payload)
-    report={'version':'1.3.2','lua_bytes':len(payload),'source_sha256':hashlib.sha256(payload).hexdigest(),
+    report={'version':'1.3.4','lua_bytes':len(payload),'source_sha256':hashlib.sha256(payload).hexdigest(),
       'baseline_sha256':hashlib.sha256((BASE/'driver_hud_1_2_1.lua').read_bytes()).hexdigest(),
       'runtime_validation':'OFFLINE_ONLY; Windows/HD2 integration and non-authority multiplayer not executed here'}
     # Frozen blocks: exact bytes after extraction, including all tank ammunition profiles.
@@ -59,9 +61,9 @@ def build(destination=None):
         assert before.rstrip()==after.rstrip(),name+' changed unexpectedly'
         report['frozen_blocks'][name]=hashlib.sha256(before.rstrip().encode()).hexdigest()
     (ROOT/'evidence').mkdir(exist_ok=True)
-    (ROOT/'evidence/source_changes.diff').write_text(''.join(difflib.unified_diff(baseline.splitlines(True),text.splitlines(True),fromfile='1.2.1/driver_hud.lua',tofile='1.3.2/driver_hud.lua')),encoding='utf-8')
+    (ROOT/'evidence/source_changes.diff').write_text(''.join(difflib.unified_diff(baseline.splitlines(True),text.splitlines(True),fromfile='1.2.1/driver_hud.lua',tofile='1.3.4/driver_hud.lua')),encoding='utf-8')
     if destination:
-        destination=Path(destination)
+        destination=Path(destination);destination.parent.mkdir(parents=True,exist_ok=True)
         with zipfile.ZipFile(destination,'w',zipfile.ZIP_DEFLATED,compresslevel=9) as z:
             for p in sorted(stage.rglob('*')):
                 if p.is_file():z.write(p,p.relative_to(stage).as_posix())

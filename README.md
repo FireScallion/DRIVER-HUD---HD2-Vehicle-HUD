@@ -2,7 +2,7 @@
 
 A lightweight vehicle-status HUD mod for **Helldivers 2**.
 
-**Current version: 1.3.2**  
+**Current version: 1.3.4**  
 [中文说明](README_中文.md) · [Nexus Mods](https://www.nexusmods.com/helldivers2/mods/16358) · [Latest GitHub Release](https://github.com/FireScallion/DRIVER-HUD---HD2-Vehicle-HUD/releases/latest)
 
 ## Supported vehicles
@@ -22,6 +22,7 @@ A lightweight vehicle-status HUD mod for **Helldivers 2**.
 - Independent condition display for all four tires.
 - Continuous durability bar inside each tire; individual tire HP numbers are not shown.
 - Destroyed tires switch to a hub-only visual state.
+- Tire order is **LF / RF / LR / RR** when facing forward.
 - FRV body outline, window outline, and HP number change color with body condition:
   - above 75%: white
   - 75% or lower: yellow
@@ -45,7 +46,7 @@ With Arsenal's default priority behavior, place **Bingus Shared Loader at the bo
 
 1. Close the game.
 2. Disable or remove every older DRIVER HUD version, including FRV / Resolver / Probe test builds.
-3. Import the current `DRIVER_HUD_1.3.2.zip` into Arsenal and enable **Core**.
+3. Import the current `DRIVER_HUD_1.3.4.zip` into Arsenal and enable **Core**.
 4. Install and enable **Bingus Shared Loader v15** separately.
 5. Keep BSL at the correct final priority.
 6. Run **Purge**, then **Deploy**.
@@ -57,7 +58,7 @@ Do not enable multiple DRIVER HUD versions at the same time.
 
 Normal users do not need to edit JSON files.
 
-1. Extract `DRIVER_HUD_1.3.2.zip` to any normal folder.
+1. Extract `DRIVER_HUD_1.3.4.zip` to any normal folder.
 2. Double-click `CONFIGURE_FRV_HUD.cmd`.
 3. Adjust horizontal position, vertical position, and scale.
 4. Click **Apply**.
@@ -82,6 +83,7 @@ Default values:
 
 ```text
 debug=true
+perf=false
 offset_y=155
 scale=1
 alpha=0.76
@@ -114,7 +116,7 @@ When reporting an issue, include the DRIVER HUD version, game version, vehicle, 
 The repository contains the editable Lua source, build script, package template, and focused tests used for the release.
 
 ```text
-python build.py dist/DRIVER_HUD_1.3.2.zip
+python build.py dist/DRIVER_HUD_1.3.4.zip
 ```
 
 The build script assembles `driver_hud.lua` from the 1.2.1 Bastion baseline plus the current FRV/runtime modules, writes the patch payload, and packages the contents of `package/`.
@@ -147,3 +149,17 @@ Key dependency / reference credits:
 - **DDRK1NG** — HD2 HUD+, used as an important reference during early HUD/bootstrap research; relevant reused material remains separately credited in `CREDITS.txt`.
 
 Helldivers 2 and its game assets, names, interfaces, and identifiers belong to their respective owners. This project is not affiliated with Arrowhead Game Studios or Sony Interactive Entertainment.
+
+## 1.3.4 performance pass
+
+Stable native-bound ownership scans run at about 5 Hz. Redundant tank binding reads are skipped; native protection metadata is reused only within one synchronous sample. Tank ammunition logic/cadence, FRV health cadence and rendering are unchanged. Optional `perf=true` diagnostics require `debug=true` and a restart.
+
+GitHub release downloads include the configurator. Nexus Main Files exclude it; download **FRV HUD Position Configurator 1.0** separately from Optional Files. The configurator is not an Arsenal mod.
+
+Validation: 33 focused offline LuaJIT checks. No live HD2 FPS result is claimed. See `docs/PERFORMANCE_说明.txt` and `evidence/performance_validation.txt`.
+
+Run the current performance checks with Python and `lupa` installed:
+
+```sh
+python tests/test_performance.py
+```

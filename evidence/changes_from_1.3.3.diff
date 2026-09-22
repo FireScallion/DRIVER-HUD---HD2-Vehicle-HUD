@@ -1,0 +1,245 @@
+--- 1.3.3
++++ 1.3.4
+@@ -1,19 +1,19 @@
+ -- HD2-Addon: mods/driverhud/driver_hud
+--- DRIVER HUD 1.3.3. Tank + FRV integration with isolated telemetry and bounded read-error grace.
++-- DRIVER HUD 1.3.4. Tank + FRV integration with isolated telemetry and bounded read-error grace.
+ local sr = rawget(_G, 'stingray')
+ if not sr then return {installed=false} end
+ if rawget(_G,'__DRIVER_HUD_INSTALLED') then return {installed=true} end
+ local App,Net,GS,World,Gui = sr.Application,sr.Network,sr.GameSession,sr.World,sr.Gui
+ local V2,V3,Color = sr.Vector2,sr.Vector3,sr.Color
+ local function call(f,...) if type(f)~='function' then return nil end local ok,a,b=pcall(f,...);if ok then return a,b end end
+-local C={debug=true,offset_y=155,scale=1,alpha=0.76}
++local C={perf=false,debug=true,offset_y=155,scale=1,alpha=0.76}
+ local dir=call(os.getenv,'APPDATA')
+ if dir and io and io.open then
+  local f=io.open(dir..'/Arrowhead/Helldivers2/driver_hud.cfg','r')
+  if f then
+   for l in f:lines() do
+    local k,v=l:match('^%s*([%w_]+)%s*=%s*([%w%.%-]+)')
+-   if k=='debug' then C.debug=v=='true' elseif C[k]~=nil then
++   if k=='debug' or k=='perf' then C[k]=v=='true' elseif C[k]~=nil then
+     local n=tonumber(v);if n and n==n then
+      if k=='offset_y' then C[k]=math.max(45,math.min(500,n))
+      elseif k=='scale' then C[k]=math.max(0.5,math.min(2,n))
+@@ -117,11 +117,11 @@
+ end
+ local LOG_UTC=(os and os.date and call(os.date,'!%Y-%m-%dT%H:%M:%SZ')) or 'unknown'
+ if LOG_ROTATION=='same_process' then
+- log('DRIVER_HUD SCRIPT_RELOAD version=1.3.3 pid='..tostring(LOG_SESSION_PID or 'unknown')..' utc='..tostring(LOG_UTC))
++ log('DRIVER_HUD SCRIPT_RELOAD version=1.3.4 pid='..tostring(LOG_SESSION_PID or 'unknown')..' utc='..tostring(LOG_UTC))
+ else
+- log('DRIVER_HUD SESSION_START version=1.3.3 pid='..tostring(LOG_SESSION_PID or 'unknown')..' session='..tostring(LOG_SESSION_KEY)..' rotation='..tostring(LOG_ROTATION)..' utc='..tostring(LOG_UTC))
+-end
+-log('DRIVER_HUD 1.3.3 START native_contract=r3-cc75948d proxy_unit_health=1 wheel_fault_isolation=1 robustness_pass=1')
++ log('DRIVER_HUD SESSION_START version=1.3.4 pid='..tostring(LOG_SESSION_PID or 'unknown')..' session='..tostring(LOG_SESSION_KEY)..' rotation='..tostring(LOG_ROTATION)..' utc='..tostring(LOG_UTC))
++end
++log('DRIVER_HUD 1.3.4 START native_contract=r3-cc75948d proxy_unit_health=1 wheel_fault_isolation=1 robustness_pass=1')
+ local FRV -- Forward declaration for lifecycle reset.
+ local M={ids={},frame=0,clock=0,seated=false,hull=nil,vehicle_ref=nil,cache={},known={},bind_retry=0,bind_weak=false,seat_enter_frame=0,preseat_owned={},entry_new_seen={},entry_owned_cursor=1,bg_owned_cursor=1}
+ local function clear()
+@@ -970,7 +970,23 @@
+   local b=self:read(p,n);self.seen[key]=b;self.watches[#self.watches+1]={p,n,b};return b
+  end
+  function G:validate()
+-  for _,w in ipairs(self.watches) do if self:read(w[1],w[2])~=w[3] then error('identity changed during sample',0) end end
++  -- Adjacent/overlapping watched ranges share one fresh read. Compare only the
++  -- original bytes; never validate against cached first-pass data or padding.
++  local ordered={};for i,w in ipairs(self.watches) do ordered[i]=w end
++  table.sort(ordered,function(a,b)return a[1]<b[1]end)
++  local i=1
++  while i<=#ordered do
++   local first=ordered[i][1];local finish=first+ordered[i][2];local j=i+1
++   while j<=#ordered and ordered[j][1]<=finish and math.max(finish,ordered[j][1]+ordered[j][2])-first<=4096 do
++    finish=math.max(finish,ordered[j][1]+ordered[j][2]);j=j+1
++   end
++   local fresh=self:read(first,finish-first)
++   for k=i,j-1 do
++    local w=ordered[k];local offset=w[1]-first
++    if fresh:sub(offset+1,offset+w[2])~=w[3] then error('identity changed during sample',0) end
++   end
++   i=j
++  end
+  end
+  function G:root(name)
+   local p=ptr(self:watch(self.base+N.roots[name],8),0)
+@@ -1107,9 +1123,18 @@
+   local max={}
+   for i=0,3 do
+    local zone=cfg+0x208+i*0x228
+-   local name=string.format('%08x',u32(self:watch(zone+96,4),0))
++   -- Read zone identity and maximum together, but watch only the identity.
++   -- The intervening config bytes are not identity guards.
++   local block=self:read(zone+96,140)
++   local key=string.format('%.0f:%d',zone+96,4)
++   local name_bytes=self.seen[key]
++   if not name_bytes then
++    name_bytes=block:sub(1,4);self.seen[key]=name_bytes
++    self.watches[#self.watches+1]={zone+96,4,name_bytes}
++   end
++   local name=string.format('%08x',u32(name_bytes,0))
+    if name~=expected_zones[i+1] then error('wheel zone identity mismatch',0) end
+-   local mx=i32(self:read(zone+232,4),0)
++   local mx=i32(block,136)
+    if mx<=0 or mx>1000000 then error('invalid wheel maximum',0) end
+    max[i+1]=mx
+   end
+@@ -1199,7 +1224,10 @@
+   local loaded,k=pcall(ffi.load,'kernel32');if not loaded then return nil,'kernel32 unavailable' end
+   local h=k.GetCurrentProcess();local buffer=ffi.new('uint8_t[4096]')
+   local got=ffi.new('size_t[1]');local mbi=ffi.new('uint8_t[48]')
+-  local w={}
++  local w={stats={reads=0,queries=0,bytes=0}};local regions={}
++  -- Protection metadata lives for one synchronous native sample only. RPM still
++  -- checks every copy, including validation reads, if a region changes meanwhile.
++  function w.begin_sample() regions={} end
+   function w.base()
+    local p=k.GetModuleHandleA('game.dll')
+    if p==nil then return nil end
+@@ -1207,17 +1235,27 @@
+   end
+   function w.read(p,n)
+    addr(p,n)
++   if N.perf then w.stats.reads=w.stats.reads+1;w.stats.bytes=w.stats.bytes+n end
+    local at,finish=p,p+n
+    for _=1,4 do
+     if at>=finish then break end
+-    local z=tonumber(k.VirtualQuery(ffi.cast('const void *',at),ffi.cast('void *',mbi),48))
+-    if z~=48 then return nil end
+-    local b=ffi.string(mbi,48);local start=ptr(b,0);local extent=ptr(b,24)
+-    local state,protection=u32(b,32),u32(b,36);local kind=protection%256
+-    if state~=4096 or math.floor(protection/256)%2==1
+-     or not (kind==2 or kind==4 or kind==8 or kind==32 or kind==64 or kind==128)
+-     or start>at or extent==0 or start+extent<=at then return nil end
+-    at=math.min(finish,start+extent)
++    local region_end
++    for _,r in ipairs(regions) do
++     if at>=r[1] and at<r[2] then region_end=r[2];break end
++    end
++    if not region_end then
++     if N.perf then w.stats.queries=w.stats.queries+1 end
++     local z=tonumber(k.VirtualQuery(ffi.cast('const void *',at),ffi.cast('void *',mbi),48))
++     if z~=48 then return nil end
++     local b=ffi.string(mbi,48);local start=ptr(b,0);local extent=ptr(b,24)
++     local state,protection=u32(b,32),u32(b,36);local kind=protection%256
++     if state~=4096 or math.floor(protection/256)%2==1
++      or not (kind==2 or kind==4 or kind==8 or kind==32 or kind==64 or kind==128)
++      or start>at or extent==0 or start+extent<=at then return nil end
++     region_end=start+extent
++     regions[#regions+1]={start,region_end}
++    end
++    at=math.min(finish,region_end)
+    end
+    if at<finish then return nil end
+    got[0]=0
+@@ -1238,6 +1276,7 @@
+   end
+   local base=N.win.base()
+   if not base then N.ready=false;N.next_check=now+1;N.reason='game.dll not yet loaded';return false,N.reason end
++  N.win.begin_sample()
+   local ok,valid,why=pcall(N.check_module,N.win.read,base)
+   if not ok or not valid then
+    N.ready=false;N.reason=why or tostring(valid)
+@@ -1246,10 +1285,14 @@
+   end
+   N.ready=true;N.base=base;N.reason=why;return true
+  end
++ function N.sample_graph()
++  N.win.begin_sample()
++  return N.graph(N.win.read,N.base)
++ end
+  function N.relation(avatar,now,previous)
+   local valid,why=N.ensure(now)
+   if not valid then return nil,why,'UNAVAILABLE' end
+-  local g=N.graph(N.win.read,N.base)
++  local g=N.sample_graph()
+   local ok,result=pcall(function()return g:relation(avatar)end)
+   if ok then return result end
+   local changed=g.relation_absent or (previous and (
+@@ -1264,7 +1307,7 @@
+  function N.resolve_proxy(collection,known_resources)
+   if not N.ready then return nil,'native version not validated' end
+   local ok,result,meta=pcall(function()
+-   local g=N.graph(N.win.read,N.base)
++   local g=N.sample_graph()
+    local d,m=g:frv_hull_for_proxy(collection,known_resources)
+    g:validate();return d,m
+   end)
+@@ -1273,11 +1316,13 @@
+  end
+  function N.health(vehicle,zones)
+   if not N.ready then return nil,'native version not validated' end
+-  local ok,result=pcall(function()return N.graph(N.win.read,N.base):health(vehicle,zones)end)
++  local ok,result=pcall(function()return N.sample_graph():health(vehicle,zones)end)
+   if ok then return result end;return nil,tostring(result)
+  end
+  return N
+ end)()
++
++Native.perf=C.perf
+ 
+ -- A small data-only flat JSON parser. Never execute an editable config as Lua.
+ local Position = {x=0.714,y=0.90,scale=1,revision=0,next_read=0}
+@@ -1454,6 +1499,11 @@
+  end
+ end
+ function FRV.poll_tank(session,d)
++ -- poll() has just validated the same native relation and clears M.hull on
++ -- identity change. refresh_bound owns ongoing HP/weapon sampling and expiry.
++ if FRV.mode=='TANK' and M.hull and M.vehicle_ref==d.goid and valid_goid(session,M.hull) then
++  return 'TANK'
++ end
+  FRV.invalidate('not_frv');FRV.block_legacy=true;FRV.mode='PENDING'
+  -- Tank HP/ammo readers below are retained from 1.2.1. Only identity acquisition
+  -- gains this exact collection relation, including direct-to-gunner entry.
+@@ -1740,13 +1790,22 @@
+  local worlds=call(App.worlds) or {};local world=call(App.main_world)
+  if session~=M.session or peer~=M.peer or world~=M.world then
+   surface_reset(worlds);full_reset();M.player=nil;M.avatar=nil;M.avatar_valid_at=nil;M.cache={};M.known={};M.preseat_owned={};M.bg_owned_cursor=1
++  M.owned_cache=nil
+   M.session,M.peer,M.world=session,peer,world
+  end
+  if not session or not peer or not live(worlds,world) or call(GS.in_session,session)~=true then clear();full_reset();return end
+- local owned=call(GS.objects_owned_by,session,peer)
+- if type(owned)~='table' then clear();full_reset();return end
+- local set,owned_ids={},{}
+- for _,id in pairs(owned) do if integer(id,32766) then set[id]=true;owned_ids[#owned_ids+1]=id end end
++ -- Cache ownership only after native binding, not during legacy acquisition or
++ -- on foot (the latter supplies the pre-entry ownership snapshot).
++ local cached=M.owned_cache
++ local stable=M.seated and (FRV.mode=='FRV' or FRV.mode=='TANK') and not FRV.grace_until
++ if not stable or not cached or M.clock>=cached.until_time then
++  local owned=call(GS.objects_owned_by,session,peer)
++  if type(owned)~='table' then M.owned_cache=nil;clear();full_reset();return end
++  local set,ids={},{}
++  for _,id in pairs(owned) do if integer(id,32766) then set[id]=true;ids[#ids+1]=id end end
++  cached={set=set,ids=ids,until_time=M.clock+0.2};M.owned_cache=cached
++ end
++ local set,owned_ids=cached.set,cached.ids
+  -- Player object 0 is legitimate in captured sessions. Vehicle/Avatar GOIDs keep
+  -- the existing stricter checks; do not reuse valid_goid() for the player object.
+  if M.player==nil or not set[M.player] or call(GS.game_object_is_type,session,M.player,'un6y1d')~=true then
+@@ -1814,9 +1873,22 @@
+ local old=rawget(_G,'update');if type(old)~='function' then return {installed=false} end
+ rawset(_G,'__DRIVER_HUD_INSTALLED',true)
+ local retry_at=0
++local perf={start=0,frames=0,total=0,maximum=0}
+ rawset(_G,'update',function(...)
+  if M.clock>=retry_at then
++  local began=C.perf and os.clock()
+   local ok,err=pcall(update,...)
++  if began then
++   local elapsed=math.max(0,os.clock()-began)*1000
++   perf.frames=perf.frames+1;perf.total=perf.total+elapsed;perf.maximum=math.max(perf.maximum,elapsed)
++   if M.clock-perf.start>=10 then
++    local stats=Native.win and Native.win.stats or {reads=0,queries=0,bytes=0}
++    log(string.format('PERF mode=%s frames=%d update_cpu_ms_avg=%.4f update_cpu_ms_max=%.4f rpm=%d virtual_query=%d bytes=%d',
++     tostring(FRV.mode),perf.frames,perf.total/perf.frames,perf.maximum,stats.reads,stats.queries,stats.bytes))
++    stats.reads=0;stats.queries=0;stats.bytes=0
++    perf={start=M.clock,frames=0,total=0,maximum=0}
++   end
++  end
+   if not ok then
+    pcall(clear);pcall(full_reset);retry_at=M.clock+1;log('HUD_RECOVERABLE_ERROR '..tostring(err))
+   end

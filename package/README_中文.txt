@@ -1,4 +1,4 @@
-DRIVER HUD 1.3.2 — 坦克与 FRV HUD
+DRIVER HUD 1.3.4 — 坦克与 FRV HUD
 
 功能
 • 堡垒坦克：显示车体血量、主炮弹药、同轴机枪弹药与中心准星。
@@ -11,7 +11,7 @@ DRIVER HUD 1.3.2 — 坦克与 FRV HUD
 安装（Arsenal）
 1. 禁用或删除所有旧 DRIVER HUD，包括各类 FRV / Resolver / Probe 测试分支。
    同时启用多个版本会冲突，不要叠加安装。
-2. 导入 DRIVER_HUD_1.3.2.zip，并启用 Core。
+2. 导入 DRIVER_HUD_1.3.4.zip，并启用 Core。
 3. 单独安装并启用 Bingus Shared Loader v15（BSL，API 1）。本包不包含 BSL。
 4. 默认加载优先级下，将 BSL 放在列表最下方并最后加载。
    若启用了 First-Mod Priority，请反向调整，确保 BSL 获得最终覆盖优先级。
@@ -20,7 +20,7 @@ DRIVER HUD 1.3.2 — 坦克与 FRV HUD
 FRV HUD位置修改
 不需要手动打开或编辑 JSON 文件。
 
-1. 将 DRIVER_HUD_1.3.2.zip 解压到任意普通文件夹。
+1. 将 DRIVER_HUD_1.3.4.zip 解压到任意普通文件夹。
 2. 双击根目录的 CONFIGURE_FRV_HUD.cmd。
 3. 在弹出的窗口中调整：
    • 水平位置
@@ -60,3 +60,5 @@ BSL 日志：
 项目自有代码沿用 MIT License；第三方材质及内容保留其原许可条件。
 Source repository: https://github.com/FireScallion/DRIVER-HUD---HD2-Vehicle-HUD
 第三方来源与鸣谢见 CREDITS.txt。本包不包含游戏 DLL、转储、第三方加载器或字体文件。
+
+性能统计默认 perf=false；需要诊断时与 debug=true 一起开启并重启。详见 PERFORMANCE_说明.txt。

@@ -1,4 +1,4 @@
-DRIVER HUD 1.3.2 — Tank + FRV HUD
+DRIVER HUD 1.3.4 — Tank + FRV HUD
 
 Features
 - Bastion driver/gunner: body HP, main ammunition, coax ammunition, and center reticle.
@@ -11,7 +11,7 @@ Features
 Installation (Arsenal)
 1. Disable/remove ALL previous DRIVER HUD versions, including FRV / Resolver / Probe test branches.
    Do not enable multiple DRIVER HUD versions at the same time.
-2. Import DRIVER_HUD_1.3.2.zip and enable Core.
+2. Import DRIVER_HUD_1.3.4.zip and enable Core.
 3. Separately install and enable Bingus Shared Loader v15 (BSL, API 1). BSL is not included.
 4. With the default priority mode, place BSL at the bottom so it loads last.
    If First-Mod Priority is enabled, reverse the order as needed so BSL keeps final override priority.
@@ -20,7 +20,7 @@ Installation (Arsenal)
 FRV HUD Position Adjustment
 You do not need to open or edit JSON files manually.
 
-1. Extract DRIVER_HUD_1.3.2.zip to any normal folder.
+1. Extract DRIVER_HUD_1.3.4.zip to any normal folder.
 2. Double-click CONFIGURE_FRV_HUD.cmd in the root folder.
 3. Adjust:
    - Horizontal position
@@ -60,3 +60,5 @@ Credits / open source
 Project-owned code retains the MIT License. Third-party material retains its original permissions.
 Source repository: https://github.com/FireScallion/DRIVER-HUD---HD2-Vehicle-HUD
 See CREDITS.txt for third-party sources and acknowledgements. No game DLLs, dumps, third-party loaders, or fonts are included.
+
+Performance diagnostics (optional): set perf=true together with debug=true in driver_hud.cfg and restart. Default perf=false. See PERFORMANCE_说明.txt for validation limits.

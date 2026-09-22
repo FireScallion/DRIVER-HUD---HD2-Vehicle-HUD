@@ -1,4 +1,27 @@
+# DRIVER HUD 1.3.4
+
+Performance update for Bastion, HMG FRV and Supply FRV.
+
+- Reduce ownership enumeration during stable native-bound vehicle use.
+- Skip redundant tank binding reads.
+- Reuse memory protection checks within each native sample and batch selected reads.
+- Add optional performance diagnostics (`perf=true`, disabled by default).
+- Preserve tank ammunition cadence/logic, FRV health cadence and HUD layout.
+
+Requires Bingus Shared Loader v15 / API 1. Disable old DRIVER HUD versions before installing, then Purge / Deploy. GitHub release includes the bilingual FRV configurator. Nexus distributes the configurator as a separate Optional File.
+
+33 focused offline checks passed. Live game FPS improvement has not been measured here.
+
 # Changelog
+
+## 1.3.3
+
+- Isolate optional SyncedHealth failures from a valid Health sample. Body and destroyed-wheel states remain available; unverified precision is not presented as exact HP.
+- Retain an already confirmed HUD for at most 0.3 seconds after the last valid native relation on a classified short read. Explicit exit, observed identity changes, failed owner checks, and compatibility failures do not receive this grace.
+- Route the already known Bastion resource and recognized tank weapon types before the FRV proxy scan. Unknown collections retain proxy-first compatibility.
+- Fall back to the same sample's valid native body HP when the GameSession value is invalid, not only when it is missing.
+- Preserve the 1.3.2 per-wheel fault isolation, HUD layout, colors, configurator, log rotation, and tank ammunition/rendering code.
+
 
 ## 1.3.2
 

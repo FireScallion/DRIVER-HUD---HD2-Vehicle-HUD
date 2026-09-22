@@ -1,3 +1,19 @@
+1.3.4 — Performance pass
+- Stable native-bound ownership enumeration: 5 Hz.
+- Remove redundant steady-state tank binding reads.
+- Sample-local VirtualQuery metadata reuse; RPM and identity validation retained.
+- Batch wheel configuration reads and adjacent validation ranges.
+- Optional perf=true diagnostics; disabled by default.
+- Tank ammo cadence/logic, vehicle relation cadence and rendering unchanged.
+- Offline verification only; live FPS and game integration need confirmation.
+
+1.3.3
+- Isolate optional sync-data failures from valid Health and destroyed-wheel states.
+- Add strictly bounded 0.3-second display retention on classified native short reads.
+- Skip FRV proxy enumeration for the known Bastion resource and tank weapon types.
+- Use valid native body HP when the GameSession value is invalid.
+- Keep UI, configuration, per-wheel isolation, and tank ammo/rendering unchanged.
+
 1.3.2
 - Fix FRV tire HUDs all becoming unreadable when one runtime wheel HP briefly falls outside its configured range during damage transitions.
 - Invalid HP now falls back per wheel to synchronized coarse state; unaffected wheels keep their continuous local bars.

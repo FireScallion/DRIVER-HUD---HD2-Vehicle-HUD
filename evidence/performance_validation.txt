@@ -1,0 +1,50 @@
+{
+  "checks": 25,
+  "native_read_counts_old_new": [
+    [
+      "healthy",
+      63,
+      58
+    ],
+    [
+      "sync absent",
+      46,
+      42
+    ],
+    [
+      "sync wrong owner",
+      51,
+      47
+    ],
+    [
+      "one wheel out of range",
+      63,
+      58
+    ],
+    [
+      "wrong zone",
+      18,
+      18
+    ],
+    [
+      "wrong core owner",
+      12,
+      12
+    ]
+  ]
+}
+{
+  "final_checks": 31,
+  "adapter_RPM_VirtualQuery_old_new": [
+    [
+      63,
+      63
+    ],
+    [
+      58,
+      20
+    ]
+  ]
+}
+TOTAL 32 PASS
+FINAL 33 PASS

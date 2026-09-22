@@ -2,7 +2,7 @@
 
 一个面向 **《绝地潜兵2 / Helldivers 2》** 的轻量级载具状态 HUD Mod。
 
-**当前版本：1.3.2**  
+**当前版本：1.3.4**  
 [English README](README.md) · [Nexus Mods](https://www.nexusmods.com/helldivers2/mods/16358) · [GitHub 最新 Release](https://github.com/FireScallion/DRIVER-HUD---HD2-Vehicle-HUD/releases/latest)
 
 ## 当前支持载具
@@ -22,6 +22,7 @@
 - 四个轮胎分别显示耐久状态。
 - 每个轮胎内部使用连续耐久条，不显示单独的轮胎 HP 数字。
 - 轮胎完全损毁后切换为轮毂表现。
+- 车辆朝前时四轮顺序为 **左前 / 右前 / 左后 / 右后**。
 - FRV 车体轮廓、车窗轮廓及车体 HP 数字会随车体状态变色：
   - 高于 75%：白色
   - 75% 及以下：黄色
@@ -44,7 +45,7 @@ DRIVER HUD 只负责显示游戏已有的载具状态，不修改车辆生命值
 
 1. 关闭游戏。
 2. 禁用或删除所有旧 DRIVER HUD，包括 FRV / Resolver / Probe 测试分支。
-3. 将当前 `DRIVER_HUD_1.3.2.zip` 导入 Arsenal，并启用 **Core**。
+3. 将当前 `DRIVER_HUD_1.3.4.zip` 导入 Arsenal，并启用 **Core**。
 4. 单独安装并启用 **Bingus Shared Loader v15**。
 5. 确认 BSL 的最终优先级正确。
 6. 执行 **Purge**，再执行 **Deploy**。
@@ -56,7 +57,7 @@ DRIVER HUD 只负责显示游戏已有的载具状态，不修改车辆生命值
 
 普通用户不需要手动编辑 JSON 文件。
 
-1. 将 `DRIVER_HUD_1.3.2.zip` 解压到任意普通文件夹。
+1. 将 `DRIVER_HUD_1.3.4.zip` 解压到任意普通文件夹。
 2. 双击根目录的 `CONFIGURE_FRV_HUD.cmd`。
 3. 调整水平位置、垂直位置和缩放。
 4. 点击“应用”。
@@ -81,6 +82,7 @@ DRIVER HUD 只负责显示游戏已有的载具状态，不修改车辆生命值
 
 ```text
 debug=true
+perf=false
 offset_y=155
 scale=1
 alpha=0.76
@@ -113,7 +115,7 @@ BSL 日志：
 仓库内包含可编辑 Lua 源码、构建脚本、发布包模板以及当前使用的 focused tests。
 
 ```text
-python build.py dist/DRIVER_HUD_1.3.2.zip
+python build.py dist/DRIVER_HUD_1.3.4.zip
 ```
 
 构建脚本会以 1.2.1 的堡垒坦克稳定版为基础，组合当前 FRV/runtime 模块，生成 `driver_hud.lua`、patch payload，并将 `package/` 打包成可安装 ZIP。
@@ -146,3 +148,15 @@ FRV reader 依赖版本限定的游戏内部结构，并在兼容性检查不通
 - **DDRK1NG** — HD2 HUD+；项目早期 HUD/bootstrap 研究的重要参考，相关复用内容继续在 `CREDITS.txt` 中单独署名。
 
 Helldivers 2 及其游戏资产、名称、接口与标识符归其各自权利方所有。本项目与 Arrowhead Game Studios 或 Sony Interactive Entertainment 无隶属关系。
+
+## 1.3.4 性能优化
+
+稳定 native 绑定乘车时，所有权枚举约 5 Hz；消除重复坦克绑定读取；单次采样内复用内存区域检查。坦克弹药逻辑和采样频率、FRV 血量频率与绘制保持不变。可选 `perf=true` 需与 `debug=true` 一起开启并重启。
+
+GitHub 下载版附带配置器。Nexus 主文件不含配置器，请从 Optional Files 下载 **FRV HUD Position Configurator 1.0**；配置器不导入 Arsenal。
+
+已通过 33 项离线 LuaJIT 检查，未声称游戏内 FPS 实测结果。详见 `docs/PERFORMANCE_说明.txt` 与 `evidence/performance_validation.txt`。安装 Python 与 `lupa` 后运行：
+
+```sh
+python tests/test_performance.py
+```

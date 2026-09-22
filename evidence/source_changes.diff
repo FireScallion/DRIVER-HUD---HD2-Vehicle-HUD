@@ -1,0 +1,1187 @@
+--- 1.2.1/driver_hud.lua
++++ 1.3.4/driver_hud.lua
+@@ -1,19 +1,19 @@
+ -- HD2-Addon: mods/driverhud/driver_hud
+--- DRIVER HUD 1.2.1. Multi-Bastion binding hotfix; main gun is 30+1 (31 total); debug logging enabled by default.
++-- DRIVER HUD 1.3.4. Tank + FRV integration with isolated telemetry and bounded read-error grace.
+ local sr = rawget(_G, 'stingray')
+ if not sr then return {installed=false} end
+ if rawget(_G,'__DRIVER_HUD_INSTALLED') then return {installed=true} end
+ local App,Net,GS,World,Gui = sr.Application,sr.Network,sr.GameSession,sr.World,sr.Gui
+ local V2,V3,Color = sr.Vector2,sr.Vector3,sr.Color
+ local function call(f,...) if type(f)~='function' then return nil end local ok,a,b=pcall(f,...);if ok then return a,b end end
+-local C={debug=true,offset_y=155,scale=1,alpha=0.76}
++local C={perf=false,debug=true,offset_y=155,scale=1,alpha=0.76}
+ local dir=call(os.getenv,'APPDATA')
+ if dir and io and io.open then
+  local f=io.open(dir..'/Arrowhead/Helldivers2/driver_hud.cfg','r')
+  if f then
+   for l in f:lines() do
+    local k,v=l:match('^%s*([%w_]+)%s*=%s*([%w%.%-]+)')
+-   if k=='debug' then C.debug=v=='true' elseif C[k]~=nil then
++   if k=='debug' or k=='perf' then C[k]=v=='true' elseif C[k]~=nil then
+     local n=tonumber(v);if n and n==n then
+      if k=='offset_y' then C[k]=math.max(45,math.min(500,n))
+      elseif k=='scale' then C[k]=math.max(0.5,math.min(2,n))
+@@ -24,12 +24,105 @@
+   f:close()
+  end
+ end
++-- One log generation per helldivers2.exe process. A script reload in the same
++-- process must append to the current log instead of rotating it again.
++local LOG_DIR = dir and (dir..'/Arrowhead/Helldivers2') or nil
++local LOG_PATH = LOG_DIR and (LOG_DIR..'/driver_hud.log') or nil
++local LOG_PREVIOUS_PATH = LOG_DIR and (LOG_DIR..'/driver_hud_previous.log') or nil
++local LOG_SESSION_PATH = LOG_DIR and (LOG_DIR..'/driver_hud_session.id') or nil
++
++local function process_session_identity()
++ if not C.debug then return nil,nil end
++ local ok,ffi=pcall(require,'ffi')
++ if not ok or not ffi or ffi.os~='Windows' or not ffi.abi('64bit') then return nil,nil end
++ pcall(ffi.cdef,'unsigned long __stdcall GetCurrentProcessId(void);')
++ pcall(ffi.cdef,'void * __stdcall GetCurrentProcess(void);')
++ pcall(ffi.cdef,'int __stdcall GetProcessTimes(void *, void *, void *, void *, void *);')
++ local loaded,k=pcall(ffi.load,'kernel32');if not loaded or not k then return nil,nil end
++ local ok_pid,pid=pcall(k.GetCurrentProcessId);pid=ok_pid and tonumber(pid) or nil
++ if not pid then return nil,nil end
++ local created=ffi.new('uint32_t[2]')
++ local exit_t=ffi.new('uint32_t[2]');local kernel_t=ffi.new('uint32_t[2]');local user_t=ffi.new('uint32_t[2]')
++ local ok_h,h=pcall(k.GetCurrentProcess);if not ok_h or h==nil then return tostring(pid),pid end
++ local ok_t,worked=pcall(k.GetProcessTimes,h,ffi.cast('void *',created),ffi.cast('void *',exit_t),ffi.cast('void *',kernel_t),ffi.cast('void *',user_t))
++ if ok_t and tonumber(worked)~=0 then
++  return string.format('%u:%08x%08x',pid,tonumber(created[1]),tonumber(created[0])),pid
++ end
++ return tostring(pid),pid
++end
++
++local function read_first_line(path)
++ local ok,f=pcall(io.open,path,'rb');if not ok or not f then return nil end
++ local ok_r,s=pcall(f.read,f,'*l');pcall(f.close,f)
++ return ok_r and s or nil
++end
++local function write_text(path,s)
++ local ok,f=pcall(io.open,path,'wb');if not ok or not f then return false end
++ local ok_w=pcall(f.write,f,s);pcall(f.close,f);return ok_w
++end
++local function file_exists(path)
++ local ok,f=pcall(io.open,path,'rb');if ok and f then pcall(f.close,f);return true end
++ return false
++end
++local function copy_then_truncate(src,dst)
++ local ok_s,s=pcall(io.open,src,'rb');if not ok_s or not s then return false end
++ local ok_d,d=pcall(io.open,dst,'wb');if not ok_d or not d then pcall(s.close,s);return false end
++ local good=true
++ while true do
++  local ok_r,chunk=pcall(s.read,s,65536)
++  if not ok_r then good=false;break end
++  if not chunk or #chunk==0 then break end
++  if not pcall(d.write,d,chunk) then good=false;break end
++ end
++ pcall(s.close,s);pcall(d.close,d)
++ if not good then return false end
++ local ok_t,t=pcall(io.open,src,'wb');if not ok_t or not t then return false end
++ pcall(t.close,t);return true
++end
++
++local function init_log_session()
++ if not C.debug or not LOG_PATH or not io or not io.open then return nil,nil,'disabled' end
++ local global_key=rawget(_G,'__DRIVER_HUD_LOG_SESSION_KEY')
++ if global_key then return global_key,rawget(_G,'__DRIVER_HUD_LOG_SESSION_PID'),'same_process' end
++ local key,pid=process_session_identity()
++ if not key then
++  -- Fail safe: without a process identity, never rotate on a possible script reload.
++  key='lua_state:'..tostring({}):gsub('table: ','')
++  rawset(_G,'__DRIVER_HUD_LOG_SESSION_KEY',key);rawset(_G,'__DRIVER_HUD_LOG_SESSION_PID',pid)
++  return key,pid,'no_process_identity'
++ end
++ local previous_key=LOG_SESSION_PATH and read_first_line(LOG_SESSION_PATH) or nil
++ local status='same_process'
++ if previous_key~=key then
++  status='new_process_no_old_log'
++  if file_exists(LOG_PATH) then
++   if os and os.remove then pcall(os.remove,LOG_PREVIOUS_PATH) end
++   local renamed=false
++   if os and os.rename then local ok_r,r=pcall(os.rename,LOG_PATH,LOG_PREVIOUS_PATH);renamed=ok_r and r and true or false end
++   if renamed then status='rotated_previous'
++   elseif copy_then_truncate(LOG_PATH,LOG_PREVIOUS_PATH) then status='copied_previous'
++   else status='rotation_failed_append' end
++  end
++  if LOG_SESSION_PATH and not write_text(LOG_SESSION_PATH,key..'\n') then status=status..'+session_marker_failed' end
++ end
++ rawset(_G,'__DRIVER_HUD_LOG_SESSION_KEY',key);rawset(_G,'__DRIVER_HUD_LOG_SESSION_PID',pid)
++ return key,pid,status
++end
++
++local LOG_SESSION_KEY,LOG_SESSION_PID,LOG_ROTATION = init_log_session()
+ local function log(s)
+- if not C.debug or not dir or not io or not io.open then return end
+- local f=io.open(dir..'/Arrowhead/Helldivers2/driver_hud.log','a')
+- if f then f:write(tostring(s),'\n');f:close() end
+-end
+-log('DRIVER_HUD 1.2.1 START')
++ if not C.debug or not LOG_PATH or not io or not io.open then return end
++ local ok,f=pcall(io.open,LOG_PATH,'a')
++ if ok and f then pcall(f.write,f,tostring(s)..'\n');pcall(f.close,f) end
++end
++local LOG_UTC=(os and os.date and call(os.date,'!%Y-%m-%dT%H:%M:%SZ')) or 'unknown'
++if LOG_ROTATION=='same_process' then
++ log('DRIVER_HUD SCRIPT_RELOAD version=1.3.4 pid='..tostring(LOG_SESSION_PID or 'unknown')..' utc='..tostring(LOG_UTC))
++else
++ log('DRIVER_HUD SESSION_START version=1.3.4 pid='..tostring(LOG_SESSION_PID or 'unknown')..' session='..tostring(LOG_SESSION_KEY)..' rotation='..tostring(LOG_ROTATION)..' utc='..tostring(LOG_UTC))
++end
++log('DRIVER_HUD 1.3.4 START native_contract=r3-cc75948d proxy_unit_health=1 wheel_fault_isolation=1 robustness_pass=1')
++local FRV -- Forward declaration for lifecycle reset.
+ local M={ids={},frame=0,clock=0,seated=false,hull=nil,vehicle_ref=nil,cache={},known={},bind_retry=0,bind_weak=false,seat_enter_frame=0,preseat_owned={},entry_new_seen={},entry_owned_cursor=1,bg_owned_cursor=1}
+ local function clear()
+  if M.gui then for _,p in ipairs(M.ids) do call(Gui[p[1]],M.gui,p[2]) end end
+@@ -44,6 +137,7 @@
+  M.hp=nil;M.max=nil;M.ammo=nil;M.mg=nil
+ end
+ local function full_reset()
++ if FRV then FRV.reset() end
+  M.cache={};M.pending_bind=nil;M.seat_hint=nil;M.ownership=nil;M.seat_scan=nil;M.next_bind=0;M.seat_unknown_since=nil
+  M.seated=false;M.hull=nil;M.vehicle_ref=nil;M.bind_retry=0;M.bind_weak=false;M.seat_enter_frame=0;M.entry_new_seen={};M.entry_owned_cursor=1;clear_values()
+ end
+@@ -119,22 +213,22 @@
+   M.seat_hint=hid
+   return false
+  end
+- if why~='avatar64.25_hull' and why~='avatar64.25_weapon' and why~='local_gunner_owned_weapon' then return false end
++ if why~='avatar64.25_hull' and why~='avatar64.25_weapon' and why~='local_gunner_owned_weapon' and why~='native_seater' then return false end
+  if M.hull==hid then
+-  if why=='avatar64.25_hull' or why=='avatar64.25_weapon' then M.bind_weak=false end
++  if why=='avatar64.25_hull' or why=='avatar64.25_weapon' or why=='native_seater' then M.bind_weak=false end
+   return
+  end
+  local pending=M.pending_bind
+- if not pending or pending.hid~=hid or M.clock-pending.last>5 then
++ if why~='native_seater' and (not pending or pending.hid~=hid or M.clock-pending.last>5) then
+   M.pending_bind={hid=hid,last=M.clock,frame=M.frame}
+   log('BASTION_CONFIRM_PENDING hull='..hid..' evidence='..why)
+   return false
+  end
+  -- The discovery scheduler provides separate observations; no fixed UI delay.
+- if pending.frame==M.frame then return false end
++ if why~='native_seater' and pending.frame==M.frame then return false end
+  M.pending_bind=nil;M.seat_hint=nil
+  M.hull=hid;M.bind_retry=0;M.seat_scan=nil;M.ownership=nil
+- M.bind_weak=not (why=='avatar64.25_hull' or why=='avatar64.25_weapon')
++ M.bind_weak=not (why=='avatar64.25_hull' or why=='avatar64.25_weapon' or why=='native_seater')
+  remember_hull(hid,hf)
+  local c={};M.cache={[hid]=c};c.hp=hf[30];c.max=hf[15];c.hull_valid_at=M.clock;c.bound_at=M.clock
+  c.main_id=hid-2;c.coax_id=hid-1;c.next_weapon_resolve=M.clock
+@@ -823,6 +917,703 @@
+  M.hp,M.max,M.ammo,M.mg=c.hp,c.max,c.ammo,c.mg
+ end
+ 
++-- Version-scoped, identity-keyed readers. Only the Win32 adapter reads memory.
++-- Pure Lua byte decoding avoids rounding uint64 resource IDs through doubles.
++local Native = (function()
++ local N={version='r3-cc75948d',ready=false,next_check=0}
++ N.roots={network=0x276F0C0,health=0x276C3B8,synced=0x276C9B0,seater=0x276CA88}
++ N.pe={machine=0x8664,sections=16,timestamp=0x6A86132E,size=0x3A6B000,checksum=0xEE0D37}
++ local function u32(s,o)
++  local a,b,c,d=s:byte(o+1,o+4)
++  if not d then error('short uint32',0) end
++  return a+b*256+c*65536+d*16777216
++ end
++ local function i32(s,o) local v=u32(s,o);return v>=2147483648 and v-4294967296 or v end
++ local function hex64(s,o) return string.format('%08x%08x',u32(s,o+4),u32(s,o)) end
++ local function ptr(s,o)
++  local lo,hi=u32(s,o),u32(s,o+4)
++  if hi>=32768 then error('noncanonical pointer',0) end
++  return hi*4294967296+lo
++ end
++ local function addr(p,n)
++  if type(p)~='number' or p~=math.floor(p) or p<65536 or p>=140737488355328
++   or type(n)~='number' or n<1 or n>4096 or n~=math.floor(n) or p+n>140737488355328 then error('read bounds',0) end
++ end
++ local function mul32(a,b)
++  local al,ah=a%65536,math.floor(a/65536)
++  local bl,bh=b%65536,math.floor(b/65536)
++  return (al*bl+((ah*bl+al*bh)%65536)*65536)%4294967296
++ end
++ local function mod64hex(h,n)
++  local hi,lo=tonumber(h:sub(1,8),16),tonumber(h:sub(9,16),16)
++  return ((hi%n)*(4294967296%n)+lo%n)%n
++ end
++ N.u32=u32;N.i32=i32;N.hex64=hex64;N.ptr=ptr;N.mul32=mul32;N.mod64hex=mod64hex
++ function N.q4(word)
++  local out={};for i=0,3 do out[i+1]=math.floor(word/4^i)%4 end;return out
++ end
++ local G={};G.__index=G
++ function N.graph(read,base)
++  return setmetatable({raw=read,base=base,calls=0,bytes=0,watches={},seen={}},G)
++ end
++ function G:read(p,n)
++  addr(p,n)
++  if self.calls>=960 or self.bytes+n>65536 then error('native sample budget',0) end
++  self.calls=self.calls+1;self.bytes=self.bytes+n
++  local b=self.raw(p,n)
++  if type(b)~='string' or #b~=n then error('incomplete native read',0) end
++  return b
++ end
++ function G:watch(p,n)
++  local key=string.format('%.0f:%d',p,n);local old=self.seen[key]
++  if old then return old end
++  local b=self:read(p,n);self.seen[key]=b;self.watches[#self.watches+1]={p,n,b};return b
++ end
++ function G:validate()
++  -- Adjacent/overlapping watched ranges share one fresh read. Compare only the
++  -- original bytes; never validate against cached first-pass data or padding.
++  local ordered={};for i,w in ipairs(self.watches) do ordered[i]=w end
++  table.sort(ordered,function(a,b)return a[1]<b[1]end)
++  local i=1
++  while i<=#ordered do
++   local first=ordered[i][1];local finish=first+ordered[i][2];local j=i+1
++   while j<=#ordered and ordered[j][1]<=finish and math.max(finish,ordered[j][1]+ordered[j][2])-first<=4096 do
++    finish=math.max(finish,ordered[j][1]+ordered[j][2]);j=j+1
++   end
++   local fresh=self:read(first,finish-first)
++   for k=i,j-1 do
++    local w=ordered[k];local offset=w[1]-first
++    if fresh:sub(offset+1,offset+w[2])~=w[3] then error('identity changed during sample',0) end
++   end
++   i=j
++  end
++ end
++ function G:root(name)
++  local p=ptr(self:watch(self.base+N.roots[name],8),0)
++  if p==0 then error(name..' manager not ready',0) end
++  addr(p,1);return p
++ end
++ function G:table(p)
++  local b=self:watch(p,20);local cap=u32(b,8)
++  if cap>1048576 or (cap>0 and 2^math.floor(math.log(cap)/math.log(2)+0.5)~=cap) then error('invalid table capacity',0) end
++  local t={p=p,entries=ptr(b,0),capacity=cap,empty=u32(b,12),multiplier=u32(b,16)}
++  if cap>0 then addr(t.entries,1) end;return t
++ end
++ function G:lookup(t,key)
++  if type(key)~='number' or key<0 or key>4294967295 or key~=math.floor(key) then error('invalid identity key',0) end
++  if key==t.empty or t.capacity==0 then return nil end
++  local first=mul32(key,t.multiplier)%t.capacity
++  for step=0,math.min(t.capacity,64)-1 do
++   local b=self:watch(t.entries+((first+step)%t.capacity)*8,8)
++   local k,j=u32(b,0),u32(b,4)
++   if k==key then
++    if j==4294967295 then return nil end
++    if j>=1048576 then error('invalid dense index',0) end
++    return j
++   end
++   if k==t.empty then return nil end
++  end
++  error('identity lookup probe limit',0)
++ end
++ function G:descriptor(p)
++  local b=self:watch(p,24)
++  return {address=p,resource=hex64(b,0),entity=u32(b,8),unit=u32(b,12),goid=u32(b,16),flags=u32(b,20)}
++ end
++ local function same(a,b)
++  return a and b and a.entity==b.entity and a.goid==b.goid and a.resource==b.resource and a.unit==b.unit
++ end
++ N.same=same
++ function G:net(root,key,by_entity)
++  if key==4294967295 or (not by_entity and key==32767) then return nil end
++  local j=self:lookup(self:table(root+(by_entity and 0xF19A70 or 0xF21A88)),key)
++  if j==nil then return nil end
++  local d=self:descriptor(root+0xF31AD8+j*24)
++  if (by_entity and d.entity or d.goid)~=key then error('network key mismatch',0) end
++  return d
++ end
++ function G:roundtrip(root,d)
++  local f=self:net(root,d.entity,true);local b=f and self:net(root,f.goid,false)
++  if not same(d,f) or not same(d,b) then error('network roundtrip mismatch',0) end
++ end
++ function G:component(manager,entity,to,dp)
++  local j=self:lookup(self:table(manager+to),entity)
++  if j==nil then return nil end
++  local array=ptr(self:watch(manager+dp,8),0)
++  local d=self:descriptor(ptr(self:watch(array+j*8,8),0))
++  if d.entity~=entity then error('component owner mismatch',0) end
++  return j,d
++ end
++ function G:relation(avatar_goid)
++  local net,seater=self:root('network'),self:root('seater')
++  local av=self:net(net,avatar_goid,false)
++  if not av then error('avatar not in native network table',0) end
++  self.relation_avatar=av -- Observations also invalidate stale-display grace on a later short read.
++  self:roundtrip(net,av)
++  local j,ad=self:component(seater,av.entity,0x20,0x38)
++  if j==nil then self.relation_absent=true;self:validate();return {status='NO_SEATER'} end
++  if not same(av,ad) then error('Seater avatar mismatch',0) end
++  local base=ptr(self:watch(seater+0x48,8),0)
++  local e=u32(self:watch(base+j*0x40,4),0)
++  self.relation_collection=e
++  if e==0 or e==4294967295 then self:validate();return {status='EMPTY'} end
++  local d=self:net(net,e,true)
++  if not d or d.goid<=0 or d.goid>=32767 then error('collection not network-linked',0) end
++  self.relation_vehicle=d
++  self:roundtrip(net,d)
++  local role=i32(self:read(base+j*0x40+0x1C,4),0)
++  self:validate()
++  return {status='VEHICLE',vehicle=d,avatar=av,role=role}
++ end
++ -- Resolve a SeatCollection/proxy descriptor to a FRV Hull without spatial or GOID heuristics.
++ -- The only accepted edge is an exact shared native unit key, a known FRV resource,
++ -- a Health component and a unique candidate. Table enumeration is limited to the
++ -- typed Health entity index; this is not a process/address-space scan.
++ function G:frv_hull_for_proxy(collection,known_resources)
++  if not collection or type(collection.unit)~='number' or collection.unit<=0 or collection.unit==4294967295 then
++   return nil,{reason='proxy has no usable unit key'}
++  end
++  local net,hm=self:root('network'),self:root('health')
++  local live=self:net(net,collection.entity,true)
++  if not same(live,collection) then error('proxy identity changed before resolve',0) end
++  self:roundtrip(net,live)
++  local t=self:table(hm+0x28)
++  if t.capacity==0 then return nil,{reason='Health table empty',capacity=0,entries=0,candidates=0} end
++  if t.capacity>4096 then error('Health table too large for proxy resolver',0) end
++  local bytes=t.capacity*8;local raw={};local off=0
++  while off<bytes do
++   local n=math.min(4096,bytes-off)
++   raw[#raw+1]=self:watch(t.entries+off,n);off=off+n
++  end
++  raw=table.concat(raw)
++  local descs=ptr(self:watch(hm+0x40,8),0)
++  local entries,candidates=0,{}
++  for pos=0,#raw-8,8 do
++   local entity,j=u32(raw,pos),u32(raw,pos+4)
++   if entity~=t.empty and j~=4294967295 then
++    entries=entries+1
++    if j>=1048576 then error('Health dense index outside safety bound',0) end
++    local dp=ptr(self:watch(descs+j*8,8),0)
++    local d=self:descriptor(dp)
++    if d.entity~=entity then error('Health table/descriptor owner mismatch',0) end
++    if d.unit==collection.unit and d.entity~=collection.entity and known_resources[d.resource] then
++     self:roundtrip(net,d);candidates[#candidates+1]=d
++    end
++   end
++  end
++  local meta={reason='no exact same-unit FRV Health owner',unit=collection.unit,capacity=t.capacity,entries=entries,candidates=#candidates}
++  if #candidates==1 then meta.reason='unique_same_unit_health';return candidates[1],meta end
++  if #candidates>1 then meta.reason='ambiguous same-unit FRV Health owners' end
++  self:validate();return nil,meta
++ end
++ function G:configuration(net,hm,d,expected_zones)
++  local j=self:lookup(self:table(hm+0x68),d.entity);local cfg
++  if j~=nil then cfg=ptr(self:watch(hm+0xA8,8),0)+j*0x5650
++  else
++   local t=ptr(self:watch(net+0xF11738,8),0)
++   local start=mod64hex(d.resource,984)
++   for step=0,63 do
++    local b=self:watch(t+((start+step)%984)*16,16);local key=hex64(b,0)
++    if key==d.resource then
++     local k=u32(b,8);if k>=984 then error('Health settings index',0) end
++     cfg=t+0x3D80+k*0x5650;break
++    elseif key=='0000000000000000' then break end
++   end
++  end
++  if not cfg then error('no identity-linked Health configuration',0) end
++  local max={}
++  for i=0,3 do
++   local zone=cfg+0x208+i*0x228
++   -- Read zone identity and maximum together, but watch only the identity.
++   -- The intervening config bytes are not identity guards.
++   local block=self:read(zone+96,140)
++   local key=string.format('%.0f:%d',zone+96,4)
++   local name_bytes=self.seen[key]
++   if not name_bytes then
++    name_bytes=block:sub(1,4);self.seen[key]=name_bytes
++    self.watches[#self.watches+1]={zone+96,4,name_bytes}
++   end
++   local name=string.format('%08x',u32(name_bytes,0))
++   if name~=expected_zones[i+1] then error('wheel zone identity mismatch',0) end
++   local mx=i32(block,136)
++   if mx<=0 or mx>1000000 then error('invalid wheel maximum',0) end
++   max[i+1]=mx
++  end
++  return max
++ end
++ function G:health(d,expected_zones)
++  local net,hm=self:root('network'),self:root('health')
++  self:roundtrip(net,d)
++  local hi,hd=self:component(hm,d.entity,0x28,0x40)
++  if hi==nil or not same(hd,d) then error('no matching Health component',0) end
++  local hpbase=ptr(self:watch(hm+0x50,8),0)
++  local record=hpbase+hi*0x1B8
++  local data=self:read(record,0x1B8)
++  local max=self:configuration(net,hm,hd,expected_zones)
++  local hp,hp_valid={},{}
++  for i=0,3 do
++   local v=i32(data,0xF8+4*i);hp[i+1]=v
++   -- Runtime HP can briefly leave [0,max] around a damage transition.  This is
++   -- a per-zone data-quality issue, not grounds to discard the other wheels.
++   -- Keep the raw value for diagnostics and let the UI fall back to q2 for
++   -- this wheel only.  Destroyed state still wins independently in wheel_model.
++   hp_valid[i+1]=(v>=0 and v<=max[i+1])
++  end
++  local out={hp=hp,hp_valid=hp_valid,max=max,body=i32(data,0x14),damage=N.q4(u32(data,0x20)),
++   state_low=u32(data,0x20),health_index=hi,health_record=record,flags=hd.flags,precision='UNKNOWN'}
++  -- Isolate ancillary watches as well as exceptions. Reserve the unchanged
++  -- core validation cost so sync trouble cannot exhaust the core's budget.
++  local reserve_calls,reserve_bytes=#self.watches,0
++  for _,w in ipairs(self.watches) do reserve_bytes=reserve_bytes+w[2] end
++  local sync=N.graph(function(p,n)
++   if self.calls+1+reserve_calls>960 or self.bytes+n+reserve_bytes>65536 then
++    error('ancillary sample budget',0)
++   end
++   return self:read(p,n)
++  end,self.base)
++  local ok,extra=pcall(function()return sync:synced_health(hd)end)
++  out.sync_valid=ok and extra~=nil
++  if out.sync_valid then
++   out.q=extra.q;out.cache=extra.cache;out.synced_flags=extra.flags
++   if hd.flags%2==1 and extra.flags%2==1 then out.precision='LOCAL_RUNTIME'
++   else out.precision='QUANTIZED_OR_UNKNOWN' end
++  else out.sync_error=ok and 'SyncedHealth absent' or tostring(extra) end
++  -- Always recheck core owner/configuration AFTER ancillary reads, even when
++  -- they failed. No failed sync watch or partial result is merged into core.
++  self:validate();out.bytes=self.bytes;out.calls=self.calls
++  return out
++ end
++ function G:synced_health(d)
++  local sm=ptr(self:watch(self.base+N.roots.synced,8),0)
++  if sm==0 then return nil end
++  local si,sd=self:component(sm,d.entity,0x20,0x38)
++  if si==nil then return nil end
++  if not same(d,sd) then error('SyncedHealth owner mismatch',0) end
++  local array=ptr(self:watch(sm+0x40,8),0);local rep=ptr(self:watch(sm+0x50,8),0)
++  local cache=self:read(array+si*0xC0,16);local word=u32(self:read(rep+si*16+4,4),0)
++  local out={q=N.q4(word),cache={},flags=sd.flags}
++  for i=0,3 do out.cache[i+1]=i32(cache,4*i) end
++  self:validate();return out
++ end
++ N.guards={{0xd3e734,"4c8b1d8509a301448bc24c8bc981faff7f000075108b055d8ea4018901488bc1"},{0x634244,"4c8b1d4d88130245896f1041c7471cffffffff41893f3b3d002a1502"},{0x9171b7,"488b4d408bd8488b0cd9e87ab6beff4869cbb8010000488b5c243048034d50488b6c243848056802000039307426ff"},{0x6aaae8,"8b81f80000004189028b81fc000000418942048b8100010000418942088b81040100004189420c"},{0x6ac968,"488d144048c1e20641ffd18b0b33d2488943404c8d0449488bc849c1e006e855ba72"},{0x6ab270,"478b4cb4048d4bfc448b97d8fdffff418bc1d3e80f57c983e003f3480f2ac8f30f5eca4183fa"}}
++ function N.check_module(read,base)
++  local b=read(base,512)
++  if not b or #b~=512 or b:sub(1,2)~='MZ' then return false,'module header unreadable' end
++  local off=u32(b,0x3C)
++  if off<64 or off>4096 then return false,'module PE offset' end
++  local p=read(base+off,112)
++  if not p or #p~=112 or p:sub(1,4)~='PE\0\0' then return false,'module PE signature' end
++  local machine=p:byte(5)+256*p:byte(6);local sections=p:byte(7)+256*p:byte(8)
++  if machine~=N.pe.machine or sections~=N.pe.sections or u32(p,8)~=N.pe.timestamp
++   or u32(p,80)~=N.pe.size or u32(p,88)~=N.pe.checksum then return false,'unsupported game.dll PE identity' end
++  for _,v in ipairs(N.guards) do
++   local want=v[2]:gsub('..',function(h)return string.char(tonumber(h,16))end)
++   if read(base+v[1],#want)~=want then return false,string.format('native code guard 0x%X',v[1]) end
++  end
++  return true,'PE+6 reviewed code guards'
++ end
++ function N.open_win32()
++  local ok,ffi=pcall(require,'ffi')
++  if not ok or not ffi or ffi.os~='Windows' or not ffi.abi('64bit') then return nil,'LuaJIT FFI / Windows x64 unavailable' end
++  -- No game native calls; all pointed-to bytes go through RPM into owned buffers.
++  local declarations={
++   'void * __stdcall GetCurrentProcess(void);',
++   'void * __stdcall GetModuleHandleA(const char *);',
++   'int __stdcall ReadProcessMemory(void *, const void *, void *, size_t, size_t *);',
++   'size_t __stdcall VirtualQuery(const void *, void *, size_t);'}
++  for _,s in ipairs(declarations) do pcall(ffi.cdef,s) end
++  local loaded,k=pcall(ffi.load,'kernel32');if not loaded then return nil,'kernel32 unavailable' end
++  local h=k.GetCurrentProcess();local buffer=ffi.new('uint8_t[4096]')
++  local got=ffi.new('size_t[1]');local mbi=ffi.new('uint8_t[48]')
++  local w={stats={reads=0,queries=0,bytes=0}};local regions={}
++  -- Protection metadata lives for one synchronous native sample only. RPM still
++  -- checks every copy, including validation reads, if a region changes meanwhile.
++  function w.begin_sample() regions={} end
++  function w.base()
++   local p=k.GetModuleHandleA('game.dll')
++   if p==nil then return nil end
++   return tonumber(ffi.cast('uintptr_t',p))
++  end
++  function w.read(p,n)
++   addr(p,n)
++   if N.perf then w.stats.reads=w.stats.reads+1;w.stats.bytes=w.stats.bytes+n end
++   local at,finish=p,p+n
++   for _=1,4 do
++    if at>=finish then break end
++    local region_end
++    for _,r in ipairs(regions) do
++     if at>=r[1] and at<r[2] then region_end=r[2];break end
++    end
++    if not region_end then
++     if N.perf then w.stats.queries=w.stats.queries+1 end
++     local z=tonumber(k.VirtualQuery(ffi.cast('const void *',at),ffi.cast('void *',mbi),48))
++     if z~=48 then return nil end
++     local b=ffi.string(mbi,48);local start=ptr(b,0);local extent=ptr(b,24)
++     local state,protection=u32(b,32),u32(b,36);local kind=protection%256
++     if state~=4096 or math.floor(protection/256)%2==1
++      or not (kind==2 or kind==4 or kind==8 or kind==32 or kind==64 or kind==128)
++      or start>at or extent==0 or start+extent<=at then return nil end
++     region_end=start+extent
++     regions[#regions+1]={start,region_end}
++    end
++    at=math.min(finish,region_end)
++   end
++   if at<finish then return nil end
++   got[0]=0
++   local success=k.ReadProcessMemory(h,ffi.cast('const void *',p),buffer,n,got)
++   if success==0 or tonumber(got[0])~=n then return nil end
++   return ffi.string(buffer,n)
++  end
++  return w
++ end
++ function N.ensure(now)
++  if N.disabled then return false,N.reason end
++  if now<N.next_check then return N.ready,N.reason end
++  N.next_check=now+10
++  if not N.win then
++   local ok,w,why=pcall(N.open_win32)
++   if not ok or not w then N.disabled=true;N.reason=why or tostring(w);return false,N.reason end
++   N.win=w
++  end
++  local base=N.win.base()
++  if not base then N.ready=false;N.next_check=now+1;N.reason='game.dll not yet loaded';return false,N.reason end
++  N.win.begin_sample()
++  local ok,valid,why=pcall(N.check_module,N.win.read,base)
++  if not ok or not valid then
++   N.ready=false;N.reason=why or tostring(valid)
++   -- Retry loaded-code checks slowly (initialization), never use failed offsets.
++   N.next_check=now+10;return false,N.reason
++  end
++  N.ready=true;N.base=base;N.reason=why;return true
++ end
++ function N.sample_graph()
++  N.win.begin_sample()
++  return N.graph(N.win.read,N.base)
++ end
++ function N.relation(avatar,now,previous)
++  local valid,why=N.ensure(now)
++  if not valid then return nil,why,'UNAVAILABLE' end
++  local g=N.sample_graph()
++  local ok,result=pcall(function()return g:relation(avatar)end)
++  if ok then return result end
++  local changed=g.relation_absent or (previous and (
++   (g.relation_avatar and not same(g.relation_avatar,previous.avatar)) or
++   (g.relation_collection and g.relation_collection~=previous.vehicle.entity) or
++   (g.relation_vehicle and not same(g.relation_vehicle,previous.vehicle))))
++  -- Only a proven short read may retain a display. Owner mismatches, changed
++  -- watches, version failures and unclassified errors remain fail-closed.
++  local kind=not changed and result=='incomplete native read' and 'TRANSIENT_READ' or 'INVALID'
++  return nil,tostring(result),kind
++ end
++ function N.resolve_proxy(collection,known_resources)
++  if not N.ready then return nil,'native version not validated' end
++  local ok,result,meta=pcall(function()
++   local g=N.sample_graph()
++   local d,m=g:frv_hull_for_proxy(collection,known_resources)
++   g:validate();return d,m
++  end)
++  if ok then return result,meta end
++  return nil,tostring(result)
++ end
++ function N.health(vehicle,zones)
++  if not N.ready then return nil,'native version not validated' end
++  local ok,result=pcall(function()return N.sample_graph():health(vehicle,zones)end)
++  if ok then return result end;return nil,tostring(result)
++ end
++ return N
++end)()
++
++Native.perf=C.perf
++
++-- A small data-only flat JSON parser. Never execute an editable config as Lua.
++local Position = {x=0.714,y=0.90,scale=1,revision=0,next_read=0}
++do
++ local defaults={x=0.714,y=0.90,scale=1}
++ local function parse(s)
++  if #s>4096 then return nil,'configuration exceeds 4 KiB' end
++  s=s:gsub('^\239\187\191','')
++  local at,len=1,#s
++  local function ws() while at<=len and s:sub(at,at):match('%s') do at=at+1 end end
++  local function quoted()
++   if s:sub(at,at)~='"' then error('expected JSON string',0) end
++   at=at+1;local out={}
++   while at<=len do
++    local c=s:sub(at,at);at=at+1
++    if c=='"' then return table.concat(out) end
++    if c=='\\' then
++     local e=s:sub(at,at);at=at+1
++     if e=='u' then
++      local h=s:sub(at,at+3);if not h:match('^%x%x%x%x$') then error('invalid JSON escape',0) end
++      out[#out+1]='\\u'..h;at=at+4
++     elseif e=='"' or e=='\\' or e=='/' or e=='n' or e=='r' or e=='t' or e=='b' or e=='f' then out[#out+1]=e
++     else error('invalid JSON escape',0) end
++    elseif c:byte()<32 then error('control character in string',0)
++    else out[#out+1]=c end
++   end
++   error('unterminated JSON string',0)
++  end
++  local function decode()
++   ws();if s:sub(at,at)~='{' then error('expected JSON object',0) end;at=at+1;ws()
++   local out,seen={},{}
++   if s:sub(at,at)=='}' then error('missing position keys',0) end
++   while true do
++    ws();local key=quoted();if seen[key] then error('duplicate key '..key,0) end;seen[key]=true
++    ws();if s:sub(at,at)~=':' then error('expected colon',0) end;at=at+1;ws()
++    if key:sub(1,1)=='_' then quoted()
++    elseif key=='x' or key=='y' or key=='scale' then
++     local start=at
++     while at<=len and s:sub(at,at):match('[%d%.%+%-%e%E]') do at=at+1 end
++     local token=s:sub(start,at-1)
++     -- This dictionary intentionally accepts finite ordinary decimal JSON numbers.
++     if not (token:match('^%-?%d+$') or token:match('^%-?%d+%.%d+$')) then error('use an ordinary decimal for '..key,0) end
++     local digits=token:gsub('^%-','');if digits:match('^0%d') then error('invalid leading zero',0) end
++     local v=tonumber(token)
++     if not v or v~=v or v==math.huge or v==-math.huge then error('invalid number '..key,0) end
++     if key=='scale' then if v<0.5 or v>2 then error('scale must be 0.5..2',0) end
++     elseif v<0 or v>1 then error(key..' must be 0..1',0) end
++     out[key]=v
++    else error('unknown position key '..key,0) end
++    ws();local c=s:sub(at,at);at=at+1
++    if c=='}' then break elseif c~=',' then error('expected comma or object end',0) end
++   end
++   ws();if at<=len then error('trailing JSON content',0) end
++   if out.x==nil or out.y==nil or out.scale==nil then error('x, y and scale are required',0) end
++   return out
++  end
++  local ok,out=pcall(decode);if ok then return out end;return nil,tostring(out)
++ end
++ Position.parse=parse
++ function Position.reload(now)
++  if now<Position.next_read then return end;Position.next_read=now+2
++  if not dir or not io or not io.open then return end
++  local ok,f=pcall(io.open,dir..'/Arrowhead/Helldivers2/frv_hud_position.json','rb')
++  if not ok then return end
++  local value,why
++  if f then
++   local readok,s=pcall(f.read,f,4097);pcall(f.close,f)
++   if not readok or type(s)~='string' then return end
++   value,why=parse(s)
++  else value=defaults end
++  if not value then
++   if Position.error~=why then log('FRV_CONFIG rejected='..why..' keeping_previous=true');Position.error=why end
++   return
++  end
++  Position.error=nil
++  if value.x~=Position.x or value.y~=Position.y or value.scale~=Position.scale then
++   Position.x,Position.y,Position.scale=value.x,value.y,value.scale;Position.revision=Position.revision+1
++   log('FRV_CONFIG x='..value.x..' y='..value.y..' scale='..value.scale)
++  end
++ end
++end
++
++-- The vehicle resolver owns identity. Health failure never invokes a second resolver.
++FRV = {next_poll=0}
++FRV.profiles={["cc21c7ffd3ebefb9"]={name="hmg_frv",t="MJAkcNku",fields={"50ac6619","a09ccd0a","b19ad128","d7082cbf","dab52fe8","0565f571","169d5ed7","82830aed","cad5b537","9ddf0683","95417727","a5f83fa0","9256767e","7f6b358d","788b9753","99901914","1dd07f05","39d141d6","98b4aaf0","e144c5e3","6fa852e3","6d2d83f8","7d9563dd","d8819b3e","cb0453ea","9d550ad3","bbecde19","8fd2d63e","c336a25c","af4c7e8a","0d4e190d","308e0842","0c0bd772","d9810f60","3b5a954f","6396946a","791943f0","91f98cec","7615f45d","eeb1225e","cca43d10","5a8871e3","e00857ad","d648e3a3","4828beb2","8db8f9a4","13daabe6","b23ad39c","ad7ddda8","fafc1456","b8ba2a04","5b7d5691","da1ad977","256605bd","dba62235","da68ae40","42f493f9","69a28ffa","93699a9f","f4b46247","f299681b","6ed6cc5a","bd5b4583","3ccffa7f"}},["9b2140378640432e"]={name="supply_frv",t="3LHk6DNB",fields={"50ac6619","a09ccd0a","b19ad128","d7082cbf","dab52fe8","0565f571","169d5ed7","82830aed","cad5b537","9ddf0683","95417727","a5f83fa0","9256767e","7f6b358d","788b9753","99901914","1dd07f05","39d141d6","98b4aaf0","e144c5e3","6d2d83f8","7d9563dd","d8819b3e","cb0453ea","9d550ad3","bbecde19","8fd2d63e","c336a25c","af4c7e8a","0d4e190d","308e0842","0c0bd772","d9810f60","3b5a954f","6396946a","791943f0","91f98cec","7615f45d","eeb1225e","cca43d10","5a8871e3","e00857ad","d648e3a3","4828beb2","8db8f9a4","13daabe6","b23ad39c","ad7ddda8","fafc1456","b8ba2a04","5b7d5691","da1ad977","256605bd","dba62235","da68ae40","42f493f9","69a28ffa","93699a9f","f4b46247","f299681b","6ed6cc5a","bd5b4583","3ccffa7f","69889752","a5ae4500"}}}
++FRV.profile_resources={['cc21c7ffd3ebefb9']=true,['9b2140378640432e']=true}
++-- Only this already observed Bastion resource gets the early direct path.
++FRV.tank_resources={['16474112801385b6']=true}
++FRV.zone_hashes={'fed0a478','f3cb00ad','c6bf05a9','f12186b7'}
++function FRV.schema(p,session)
++ if p.session~=session then p.session=session;p.ok=nil;p.retry=0 end
++ if p.ok==true then return true end
++ if M.clock<(p.retry or 0) then return false end;p.retry=M.clock+5
++ local info=call(Net.object_info,p.t);local fs=type(info)=='table' and info.fields
++ if type(fs)~='table' then return false end
++ local n=0;local valid=true
++ for k in pairs(fs) do
++  if type(k)~='number' or k~=math.floor(k) or k<1 or k>#p.fields then valid=false;break end;n=n+1
++ end
++ if n~=#p.fields then valid=false end
++ if valid then for i,v in ipairs(p.fields) do if hash_of_field(fs[i])~=v then valid=false;break end end end
++ if p.ok~=valid then log('FRV_SCHEMA type='..p.name..' ok='..tostring(valid)) end
++ p.ok=valid;return valid
++end
++function FRV.invalidate(reason)
++ if FRV.vehicle then log('FRV_LOST entity='..FRV.vehicle.entity..' goid='..FRV.vehicle.goid..' reason='..reason) end
++ FRV.vehicle=nil;FRV.profile=nil;FRV.hp=nil;FRV.max=nil;FRV.data=nil;FRV.data_at=nil;FRV.log_key=nil
++end
++function FRV.reset()
++ FRV.last_relation=nil;FRV.relation_at=nil;FRV.relation_session=nil;FRV.relation_avatar=nil;FRV.grace_until=nil
++ FRV.invalidate('context_reset');FRV.next_poll=0;FRV.mode=nil;FRV.identity_key=nil;FRV.block_legacy=false;FRV.native_seen=false;FRV.proxy_key=nil;FRV.proxy_vehicle=nil;FRV.proxy_retry=0;FRV.proxy_log=nil
++end
++function FRV.drop_tank()
++ if M.hull then log('BASTION_CONTEXT_CLEAR hull='..M.hull) end
++ M.hull=nil;M.cache={};M.pending_bind=nil;M.ownership=nil;M.seat_scan=nil;M.seat_hint=nil;clear_values()
++end
++function FRV.wheel_model(data,i)
++ if not data then return {kind='unknown'} end
++ local state=data.damage and data.damage[i]
++ if state==2 then return {kind='hub',state=2} end
++ local hp,mx=data.hp and data.hp[i],data.max and data.max[i]
++ local hp_ok=(data.hp_valid==nil or data.hp_valid[i]~=false)
++ if data.precision=='LOCAL_RUNTIME' and hp_ok and type(hp)=='number' and type(mx)=='number' and mx>0 then
++  return {kind='tire',ratio=math.max(0,math.min(1,hp/mx)),state=state,precision='LOCAL_RUNTIME'}
++ end
++ local q=data.q and data.q[i]
++ if q~=nil and q>=0 and q<=3 and q==math.floor(q) then
++  return {kind='tire',ratio=q/3,upper=math.min(1,(q+1)/3),state=state,precision='QUANTIZED_OR_UNKNOWN'}
++ end
++ return {kind='unknown',state=state}
++end
++function FRV.color(ratio)
++ if ratio==nil then return {148,155,157} end
++ if ratio<=0.5 then return {255,96,83} elseif ratio<=0.75 then return {255,205,83} end
++ return {240,244,239}
++end
++function FRV.body_valid(hp,mx)
++ return type(mx)=='number' and mx==math.floor(mx) and mx>0 and mx<=10000000
++  and type(hp)=='number' and hp==math.floor(hp) and hp>=0 and hp<=mx
++end
++function FRV.read(session)
++ local d,p=FRV.vehicle,FRV.profile
++ if not d or not p then return end
++ -- Lua getters are gated by exact supported resource, live GOID, type and schema.
++ if not valid_goid(session,d.goid) or call(GS.game_object_is_type,session,d.goid,p.t)~=true or not FRV.schema(p,session) then
++  FRV.invalidate('type_or_schema_mismatch');return
++ end
++ local hp=call(GS.game_object_field,session,d.goid,'sd7m7FWA')
++ local mx=call(GS.game_object_field,session,d.goid,'nZ5Vxt8x')
++ local data,why=Native.health(d,FRV.zone_hashes)
++ if data then FRV.data=data;FRV.data_at=M.clock;FRV.read_error=nil
++ else
++  -- No indefinitely stale bars. Keep only a short last-good display for THIS ID.
++  if not FRV.data_at or M.clock-FRV.data_at>0.25 then FRV.data=nil end
++  if FRV.read_error~=why or M.clock>=(FRV.error_log_at or 0) then
++   log('FRV_READ_REJECT entity='..d.entity..' reason='..tostring(why));FRV.read_error=why;FRV.error_log_at=M.clock+10
++  end
++ end
++ if not FRV.body_valid(hp,mx) then hp=data and data.body end
++ if FRV.body_valid(hp,mx) then FRV.hp=hp;FRV.max=mx else FRV.hp=nil;FRV.max=nil end
++ if data then
++  local valid_bits={}
++  for i=1,4 do valid_bits[i]=(not data.hp_valid or data.hp_valid[i]~=false) and '1' or '0' end
++  local valid_text=table.concat(valid_bits,'')
++  local sync_status=data.sync_valid and 'OK' or tostring(data.sync_error or 'unavailable')
++  local key=table.concat({d.entity,d.goid,data.flags,tostring(data.synced_flags),data.precision,sync_status,table.concat(data.hp,','),valid_text,table.concat(data.max,','),table.concat(data.q or {},','),table.concat(data.damage,','),tostring(FRV.hp)},'|')
++  if key~=FRV.log_key and M.clock>=(FRV.log_at or 0) then
++   log('FRV_STATE resource='..d.resource..' entity='..d.entity..' goid='..d.goid..' authority_bit0='..tostring(data.flags%2==1)
++    ..' precision='..data.precision..' sync='..sync_status..' hp='..table.concat(data.hp,',')..' hp_valid='..valid_text..' max='..table.concat(data.max,',')
++    ..' q2='..table.concat(data.q or {},',')..' damage='..table.concat(data.damage,',')..' body='..tostring(FRV.hp)
++    ..' health_index='..data.health_index..' read_bytes='..data.bytes..' read_calls='..data.calls)
++   FRV.log_key=key;FRV.log_at=M.clock+0.5
++  end
++ end
++end
++function FRV.poll_tank(session,d)
++ -- poll() has just validated the same native relation and clears M.hull on
++ -- identity change. refresh_bound owns ongoing HP/weapon sampling and expiry.
++ if FRV.mode=='TANK' and M.hull and M.vehicle_ref==d.goid and valid_goid(session,M.hull) then
++  return 'TANK'
++ end
++ FRV.invalidate('not_frv');FRV.block_legacy=true;FRV.mode='PENDING'
++ -- Tank HP/ammo readers below are retained from 1.2.1. Only identity acquisition
++ -- gains this exact collection relation, including direct-to-gunner entry.
++ local hf=sample(session,d.goid)
++ if hull_sig(hf) then
++  bind_hull(d.goid,hf,'native_seater');M.vehicle_ref=d.goid;FRV.mode='TANK';return FRV.mode
++ end
++ local hid,hull=resolve_weapon_hull(session,d.goid)
++ if hid then bind_hull(hid,hull,'native_seater');M.vehicle_ref=d.goid;FRV.mode='TANK';return FRV.mode end
++ -- A budget miss may retain only a tank already tied to this unchanged native ID.
++ -- It never authorizes the old avatar reference to pick some other hull.
++ if M.hull and (M.hull==d.goid or M.vehicle_ref==d.goid) then FRV.mode='TANK'
++ else FRV.drop_tank();FRV.mode='NONE' end
++ return FRV.mode
++end
++function FRV.clear_identity(reason)
++ FRV.grace_until=nil;FRV.last_relation=nil;FRV.relation_at=nil;FRV.identity_key=nil
++ FRV.proxy_key=nil;FRV.proxy_vehicle=nil;FRV.proxy_retry=0;FRV.proxy_log=nil
++ FRV.invalidate(reason);FRV.drop_tank();FRV.mode='NONE'
++end
++function FRV.can_hold(session,avatar)
++ if FRV.relation_session~=session or FRV.relation_avatar~=avatar then return false end
++ if not FRV.last_relation or not valid_goid(session,FRV.last_relation.vehicle.goid) then return false end
++ if FRV.mode=='FRV' then
++  return FRV.vehicle~=nil and valid_goid(session,FRV.vehicle.goid)
++ elseif FRV.mode=='TANK' then return valid_goid(session,M.hull) end
++ return false
++end
++function FRV.poll(session,avatar)
++ -- Check expiry every frame, not just at 10 Hz: a stalled poll cannot extend grace.
++ if FRV.grace_until and (M.clock>=FRV.grace_until or not FRV.can_hold(session,avatar)) then
++  FRV.clear_identity('native_read_grace_expired')
++ end
++ if M.clock<FRV.next_poll then return FRV.mode end
++ FRV.next_poll=M.clock+0.1 -- Time based, no catch-up burst and no whole-world scan.
++ local relation,why,kind=Native.relation(avatar,M.clock,FRV.last_relation)
++ if not relation then
++  if FRV.last_error~=why or M.clock>=(FRV.native_error_at or 0) then
++   log('NATIVE_UNAVAILABLE kind='..tostring(kind)..' reason='..tostring(why));FRV.last_error=why;FRV.native_error_at=M.clock+10
++  end
++  if kind=='TRANSIENT_READ' and FRV.last_relation and FRV.relation_at
++   and M.clock<FRV.relation_at+0.3 and FRV.can_hold(session,avatar) then
++   if not FRV.grace_until then log('NATIVE_READ_GRACE seconds=0.3 mode='..FRV.mode) end
++   FRV.grace_until=FRV.relation_at+0.3
++   return FRV.mode -- Display only: no Health refresh or alternative vehicle search.
++  end
++  -- Once a native relation was in use, a missed read must NOT revive stale tank
++  -- references/ownership hints. Only a verified relation or explicit exit resets it.
++  if FRV.native_seen or FRV.block_legacy then
++   FRV.clear_identity('native_identity_unavailable')
++  else FRV.mode='LEGACY' end
++  return FRV.mode
++ end
++ FRV.last_error=nil;FRV.grace_until=nil
++ if relation.status=='NO_SEATER' then
++  FRV.last_relation=nil;FRV.relation_at=nil
++  if FRV.native_seen then FRV.clear_identity('seater_gone')
++  else FRV.mode='LEGACY' end
++  return FRV.mode
++ end
++ FRV.native_seen=true
++ if relation.status~='VEHICLE' then
++  FRV.clear_identity('collection_empty');FRV.identity_key=nil;return FRV.mode
++ end
++ FRV.last_relation=relation;FRV.relation_at=M.clock;FRV.relation_session=session;FRV.relation_avatar=avatar
++ local collection=relation.vehicle
++ local proxy_key=table.concat({avatar,relation.avatar.entity,collection.entity,collection.goid,collection.resource,collection.unit},':')
++ if FRV.identity_key~=proxy_key then
++  FRV.invalidate('identity_changed');FRV.drop_tank();FRV.identity_key=proxy_key
++  FRV.proxy_key=nil;FRV.proxy_vehicle=nil;FRV.proxy_retry=0;FRV.proxy_log=nil
++  log('NATIVE_VEHICLE avatar='..avatar..' avatar_entity='..relation.avatar.entity..' entity='..collection.entity..' goid='..collection.goid..' resource='..collection.resource..' unit='..tostring(collection.unit)..' role_raw='..relation.role)
++ end
++ local d=collection
++ local p=FRV.profiles[d.resource]
++ if not p and (FRV.tank_resources[collection.resource]
++  or call(GS.game_object_is_type,session,collection.goid,'rHVbvgIu')==true
++  or call(GS.game_object_is_type,session,collection.goid,'fZwFCDKT')==true) then
++  return FRV.poll_tank(session,collection)
++ end
++ if not p then
++  -- Unknown resources still keep proxy-first precedence; a weak tank-shaped
++  -- sample must not steal a successfully resolvable FRV proxy.
++  -- Some seats expose a networked SeatCollection/proxy rather than the Hull.
++  -- Resolve only through a unique exact native unit-key match in the typed
++  -- Health component table. Never use distance, object ordering or HP patterns.
++  if FRV.proxy_key==proxy_key and FRV.proxy_vehicle then d=FRV.proxy_vehicle;p=FRV.profiles[d.resource]
++  elseif M.clock>=(FRV.proxy_retry or 0) then
++   FRV.proxy_retry=M.clock+0.5
++   local resolved,meta=Native.resolve_proxy(collection,FRV.profile_resources)
++   if resolved then
++    d=resolved;p=FRV.profiles[d.resource];FRV.proxy_key=proxy_key;FRV.proxy_vehicle=d
++    log('FRV_PROXY_RESOLVE proxy_entity='..collection.entity..' proxy_goid='..collection.goid..' proxy_resource='..collection.resource
++     ..' unit='..tostring(collection.unit)..' hull_entity='..d.entity..' hull_goid='..d.goid..' hull_resource='..d.resource
++     ..' evidence='..tostring(type(meta)=='table' and meta.reason or meta))
++   else
++    local detail=type(meta)=='table' and ('reason='..tostring(meta.reason)..' unit='..tostring(meta.unit)..' entries='..tostring(meta.entries)..' candidates='..tostring(meta.candidates)) or tostring(meta)
++    if FRV.proxy_log~=detail or M.clock>=(FRV.proxy_log_at or 0) then
++     log('FRV_PROXY_REJECT proxy_entity='..collection.entity..' proxy_goid='..collection.goid..' proxy_resource='..collection.resource..' '..detail)
++     FRV.proxy_log=detail;FRV.proxy_log_at=M.clock+5
++    end
++   end
++  end
++ end
++ if p then
++  FRV.block_legacy=true;FRV.mode='FRV';FRV.drop_tank()
++  FRV.vehicle=d;FRV.profile=p;FRV.read(session);return FRV.mode
++ end
++ return FRV.poll_tank(session,collection)
++end
++
+ local material='mods/driver_hud/solid'
+ local function remember(kind,id) if id~=nil then M.ids[#M.ids+1]={kind,id} end end
+ local function tri(x1,y1,x2,y2,x3,y3,a)
+@@ -835,6 +1626,143 @@
+ local function disk(x,y,r,a)
+  for i=0,23 do local t=i*math.pi/12;local u=(i+1)*math.pi/12;tri(x,y,x+math.cos(t)*r,y+math.sin(t)*r,x+math.cos(u)*r,y+math.sin(u)*r,a) end
+ end
++-- FRV geometry only: no texture background, no numeric wheel labels.
++function FRV.triangle(x1,y1,x2,y2,x3,y3,a,c)
++ local uv=V2(0.5,0)
++ remember('destroy_triangle',Gui.triangle(M.gui,V3(x1,0,y1),V3(x2,0,y2),V3(x3,0,y3),3,Color(math.floor(a*255),c[1],c[2],c[3]),material,uv,uv,uv))
++end
++function FRV.line(x1,y1,x2,y2,width,a,c)
++ local dx,dy=x2-x1,y2-y1;local l=math.sqrt(dx*dx+dy*dy);if l<0.001 then return end
++ local nx,ny=-dy/l*width*0.5,dx/l*width*0.5
++ FRV.triangle(x1+nx,y1+ny,x1-nx,y1-ny,x2+nx,y2+ny,a,c)
++ FRV.triangle(x1-nx,y1-ny,x2-nx,y2-ny,x2+nx,y2+ny,a,c)
++end
++function FRV.path(points,x,y,s,width,a,c,closed)
++ if not closed then
++  for i=1,#points-1 do
++   local p,q=points[i],points[i+1]
++   FRV.line(x+p[1]*s,y+p[2]*s,x+q[1]*s,y+q[2]*s,width*s,a,c)
++  end
++  return
++ end
++ -- Shared miter vertices form a continuous ring, including every corner.
++ -- No detached edge rectangles and no overlapping translucent corner patches.
++ local outer,inner={},{}
++ for i,p in ipairs(points) do
++  local prev,nextp=points[(i-2)%#points+1],points[i%#points+1]
++  local ax,ay=p[1]-prev[1],p[2]-prev[2]
++  local bx,by=nextp[1]-p[1],nextp[2]-p[2]
++  local al,bl=math.sqrt(ax*ax+ay*ay),math.sqrt(bx*bx+by*by)
++  if al==0 or bl==0 then return end
++  local nx,ny=-ay/al,ax/al;local mx,my=-by/bl,bx/bl
++  local denom=1+nx*mx+ny*my;if denom<0.001 then return end
++  local dx,dy=(nx+mx)*width*0.5/denom,(ny+my)*width*0.5/denom
++  outer[i]={x+(p[1]+dx)*s,y+(p[2]+dy)*s}
++  inner[i]={x+(p[1]-dx)*s,y+(p[2]-dy)*s}
++ end
++ for i=1,#points do
++  local j=i%#points+1;local p,q,r,t=outer[i],inner[i],outer[j],inner[j]
++  FRV.triangle(p[1],p[2],q[1],q[2],r[1],r[2],a,c)
++  FRV.triangle(q[1],q[2],t[1],t[2],r[1],r[2],a,c)
++ end
++end
++function FRV.bar(x,y,w,h,a,c)
++ if w<=0 or h<=0 then return end
++ FRV.triangle(x,y,x+w,y,x,y+h,a,c);FRV.triangle(x+w,y,x+w,y+h,x,y+h,a,c)
++end
++function FRV.wheel(x,y,s,model,a)
++ if model.kind=='hub' then
++  local c=FRV.color(0)
++  -- A narrow, bare rim. No rubber silhouette, life bar, axle or numeric label.
++  FRV.path({{7,5},{13,5},{15,7},{15,27},{13,29},{7,29},{5,27},{5,7}},x,y,s,1.8,a,c,true)
++  FRV.line(x+10*s,y+9*s,x+10*s,y+25*s,1.5*s,a*0.7,c)
++  return
++ end
++ local c=FRV.color(model.ratio)
++ FRV.path({{4,0},{16,0},{20,4},{20,30},{16,34},{4,34},{0,30},{0,4}},x,y,s,2,a,c,true)
++ if model.kind=='unknown' then
++  FRV.line(x+7*s,y+17*s,x+13*s,y+17*s,1.5*s,a*0.7,c);return
++ end
++ -- A single continuous track and fill; HP is never rendered as text.
++ FRV.bar(x+5*s,y+5*s,10*s,24*s,a*0.10,c)
++ if model.upper and model.upper>model.ratio then
++  -- Remote/unknown precision: translucent tail is the coarse interval, not an
++  -- invented precise measurement. The underlying tire remains at q2 == 0.
++  FRV.bar(x+5*s,y+(5+24*model.ratio)*s,10*s,24*(model.upper-model.ratio)*s,a*0.23,c)
++ end
++ FRV.bar(x+5*s,y+5*s,10*s,24*model.ratio*s,a*0.78,c)
++end
++function FRV.layout(w,h)
++ local ds=math.min(w/1920,h/1080);local s=ds*Position.scale
++ local x=w*Position.x-64*s;local y=h*(1-Position.y)-62*s
++ x=math.max(8*ds,math.min(w-128*s-8*ds,x))
++ y=math.max(8*ds,math.min(h-124*s-8*ds,y))
++ return x,y,s
++end
++function FRV.number_fallback(label,cx,cy,size,a,c)
++ -- Last-resort geometric digits when the engine does not expose text extents.
++ -- Their cell bounds are defined here, so centering is still exact, not guessed.
++ local seg={{{0,1},{1,1}},{{1,1},{1,0.5}},{{1,0.5},{1,0}},{{0,0},{1,0}},{{0,0.5},{0,0}},{{0,1},{0,0.5}},{{0,0.5},{1,0.5}}}
++ local map={['0']={1,2,3,4,5,6},['1']={2,3},['2']={1,2,7,5,4},['3']={1,2,7,3,4},['4']={6,7,2,3},['5']={1,6,7,3,4},['6']={1,6,7,5,3,4},['7']={1,2,3},['8']={1,2,3,4,5,6,7},['9']={1,2,3,4,6,7},['-']={7}}
++ local cw,gap=size*0.43,size*0.2
++ local minx,maxx=math.huge,-math.huge
++ for i=1,#label do
++  for _,j in ipairs(map[label:sub(i,i)] or map['-']) do
++   for _,p in ipairs(seg[j]) do local x=(i-1)*(cw+gap)+p[1]*cw;minx=math.min(minx,x);maxx=math.max(maxx,x) end
++  end
++ end
++ local left=cx-(minx+maxx)*0.5
++ for i=1,#label do
++  for _,j in ipairs(map[label:sub(i,i)] or map['-']) do
++   local p,q=seg[j][1],seg[j][2];local x=left+(i-1)*(cw+gap);local y=cy-size/2
++   FRV.line(x+p[1]*cw,y+p[2]*size,x+q[1]*cw,y+q[2]*size,size*0.085,a,c)
++  end
++ end
++end
++function FRV.centered_number(label,cx,cy,size,a,c)
++ local font='core/performance_hud/debug'
++ local low,high=call(Gui.text_extents,M.gui,label,font,size)
++ if low and high then
++  local function xy(v)
++   -- Stingray's documented result is Vector2; use its accessors, not guessed
++   -- userdata fields. A table/property fallback also supports older bindings.
++   local ok,fx,fy=pcall(function()return V2.x,V2.y end)
++   if ok and type(fx)=='function' and type(fy)=='function' then return fx(v),fy(v) end
++   return v.x,v.y
++  end
++  local ok,lx,ly,hx,hy=pcall(function()
++   local ax,ay=xy(low);local bx,by=xy(high);return ax,ay,bx,by
++  end)
++  if ok and type(lx)=='number' and type(ly)=='number' and type(hx)=='number' and type(hy)=='number'
++   and lx==lx and ly==ly and hx==hx and hy==hy
++   and hx>=lx and hy>=ly and hx-lx<size*20 and hy-ly<size*5
++   and math.abs(lx)<size*20 and math.abs(ly)<size*20 then
++   remember('destroy_text',Gui.text(M.gui,label,font,size,font,V2(cx-(lx+hx)/2,cy-(ly+hy)/2),Color(math.floor(a*255),c[1],c[2],c[3])))
++   return
++  end
++ end
++ FRV.number_fallback(label,cx,cy,size,a,c)
++end
++function FRV.draw(w,h)
++ local d=FRV.data;local vehicle=FRV.vehicle
++ if not vehicle then return end
++ local key=table.concat({'frv',w,h,vehicle.entity,vehicle.goid,tostring(FRV.hp),tostring(FRV.max),Position.revision,
++  d and table.concat(d.hp,',') or '?',d and table.concat(d.damage,',') or '?',d and table.concat(d.q or {},',') or '?',d and d.precision or '?'},':')
++ if key==M.draw_key then return end
++ clear()
++ local x,y,s=FRV.layout(w,h);local a=math.min(1,C.alpha+0.12)
++ local ratio=FRV.hp and FRV.max and FRV.hp/FRV.max or nil;local c=FRV.color(ratio)
++ local body={{43,2},{85,2},{92,10},{92,92},{85,122},{43,122},{36,92},{36,10}}
++ FRV.path(body,x,y,s,1.8,a*0.9,c,true)
++ FRV.path({{43,94},{47,113},{81,113},{85,94}},x,y,s,1.5,a*0.70,c,true)
++ FRV.line(x+44*s,y+14*s,x+84*s,y+14*s,1.3*s,a*0.55,c)
++ local positions={{8,84},{100,84},{8,8},{100,8}}
++ for i,p in ipairs(positions) do FRV.wheel(x+p[1]*s,y+p[2]*s,s,FRV.wheel_model(d,i),a) end
++ local label=FRV.hp~=nil and tostring(math.floor(FRV.hp+0.5)) or '--'
++ FRV.centered_number(label,x+64*s,y+62*s,17*s,a,c)
++ M.draw_key=key
++end
++
+ local function draw(w,h)
+  local key=table.concat({w,h,tostring(M.hull),tostring(M.hp),tostring(M.max),tostring(M.ammo),tostring(M.mg)},':')
+  if key==M.draw_key then return end
+@@ -855,64 +1783,125 @@
+ end
+ local function update(dt)
+  M.frame=M.frame+1
+- local step=type(dt)=='number' and dt or 0.016667;if step<0 then step=0 elseif step>0.25 then step=0.25 end;M.clock=M.clock+step
+- local session=call(Net.game_session);local peer=call(Net.peer_id);local worlds=call(App.worlds) or {};local world=call(App.main_world)
+- if session~=M.session or peer~=M.peer or world~=M.world then surface_reset(worlds);full_reset();M.player=nil;M.avatar=nil;M.cache={};M.known={};M.preseat_owned={};M.bg_owned_cursor=1;M.session,M.peer,M.world=session,peer,world end
+- if not session or not peer or not live(worlds,world) or call(GS.in_session,session)==false then clear();return end
+- local owned=call(GS.objects_owned_by,session,peer)
+- if type(owned)~='table' then clear();full_reset();return end
+- local set,owned_ids={},{};for _,id in pairs(owned) do if type(id)=='number' then set[id]=true;owned_ids[#owned_ids+1]=id end end
+- if not M.player or not set[M.player] or call(GS.game_object_is_type,session,M.player,'un6y1d')~=true then
++ local step=type(dt)=='number' and dt or 0.016667
++ if step~=step then step=0 elseif step<0 then step=0 elseif step>0.25 then step=0.25 end
++ M.clock=M.clock+step;Position.reload(M.clock)
++ local session=call(Net.game_session);local peer=call(Net.peer_id)
++ local worlds=call(App.worlds) or {};local world=call(App.main_world)
++ if session~=M.session or peer~=M.peer or world~=M.world then
++  surface_reset(worlds);full_reset();M.player=nil;M.avatar=nil;M.avatar_valid_at=nil;M.cache={};M.known={};M.preseat_owned={};M.bg_owned_cursor=1
++  M.owned_cache=nil
++  M.session,M.peer,M.world=session,peer,world
++ end
++ if not session or not peer or not live(worlds,world) or call(GS.in_session,session)~=true then clear();full_reset();return end
++ -- Cache ownership only after native binding, not during legacy acquisition or
++ -- on foot (the latter supplies the pre-entry ownership snapshot).
++ local cached=M.owned_cache
++ local stable=M.seated and (FRV.mode=='FRV' or FRV.mode=='TANK') and not FRV.grace_until
++ if not stable or not cached or M.clock>=cached.until_time then
++  local owned=call(GS.objects_owned_by,session,peer)
++  if type(owned)~='table' then M.owned_cache=nil;clear();full_reset();return end
++  local set,ids={},{}
++  for _,id in pairs(owned) do if integer(id,32766) then set[id]=true;ids[#ids+1]=id end end
++  cached={set=set,ids=ids,until_time=M.clock+0.2};M.owned_cache=cached
++ end
++ local set,owned_ids=cached.set,cached.ids
++ -- Player object 0 is legitimate in captured sessions. Vehicle/Avatar GOIDs keep
++ -- the existing stricter checks; do not reuse valid_goid() for the player object.
++ if M.player==nil or not set[M.player] or call(GS.game_object_is_type,session,M.player,'un6y1d')~=true then
+   M.player=nil
+-  for id in pairs(set) do if call(GS.game_object_is_type,session,id,'un6y1d')==true then if M.player then clear();full_reset();return end;M.player=id end end
+- end
+- local avatar=M.player and call(GS.game_object_field,session,M.player,'baegche')
++  for id in pairs(set) do
++   if call(GS.game_object_is_type,session,id,'un6y1d')==true then
++    if M.player~=nil then clear();full_reset();return end
++    M.player=id
++   end
++  end
++ end
++ if M.player==nil or call(GS.game_object_exists,session,M.player)~=true then
++  clear();full_reset();M.avatar=nil;M.avatar_valid_at=nil;return
++ end
++ local avatar=call(GS.game_object_field,session,M.player,'baegche')
+  if avatar==nil and M.avatar and M.clock-(M.avatar_valid_at or -100)<0.5 then avatar=M.avatar
+  elseif avatar~=nil then M.avatar_valid_at=M.clock end
+  if avatar~=M.avatar then full_reset();M.avatar=avatar end
+- local motion,rotation,where,state
+- if type(avatar)=='number' and avatar~=32767 then
+-  motion=call(GS.game_object_field,session,avatar,'motion_enabled')
+-  rotation=call(GS.game_object_field,session,avatar,'rotation_enabled')
+-  where=call(GS.game_object_field,session,avatar,'gls4w9b')
+-  state=call(GS.game_object_field,session,avatar,'state')
+- end
+- local seated_now=motion==false and rotation==false and                               where~=30 and state~=2
+- local missing=motion==nil or rotation==nil                            
++ if not valid_goid(session,avatar) then clear();full_reset();return end
++ local motion=call(GS.game_object_field,session,avatar,'motion_enabled')
++ local rotation=call(GS.game_object_field,session,avatar,'rotation_enabled')
++ local where=call(GS.game_object_field,session,avatar,'gls4w9b')
++ local state=call(GS.game_object_field,session,avatar,'state')
+  local explicit_exit=motion==true or rotation==true or where==30 or state==2
++ local seated_now=motion==false and rotation==false and where~=30 and state~=2
++ local missing=motion==nil or rotation==nil
+  if not explicit_exit and missing and M.seated then
+-  M.seat_unknown_since=M.seat_unknown_since or M.clock
+-  seated_now=M.clock-M.seat_unknown_since<0.5
++  M.seat_unknown_since=M.seat_unknown_since or M.clock;seated_now=M.clock-M.seat_unknown_since<0.5
+  else M.seat_unknown_since=nil end
+  if not seated_now then
+-  local was_seated=M.seated
+-  M.cache={};M.pending_bind=nil;M.seat_hint=nil;M.ownership=nil;M.seat_scan=nil;M.seat_unknown_since=nil
+-  M.seated=false;M.hull=nil;M.vehicle_ref=nil;M.bind_retry=0;M.bind_weak=false;M.seat_enter_frame=0;clear_values()
+-  refresh_known_masks(session,was_seated)
+-  discover_owned_bastions(session,owned_ids)
+-  M.preseat_owned=set
++  local was=M.seated
++  if was then log('HUD_EXIT avatar='..avatar) end
++  full_reset();refresh_known_masks(session,was);discover_owned_bastions(session,owned_ids);M.preseat_owned=set
+   clear();return
+  end
+  if not M.seated then
+-  M.seated=true;M.hull=nil;M.vehicle_ref=nil;M.bind_retry=0;M.bind_weak=false;M.seat_enter_frame=M.frame;M.seat_enter_time=M.clock;M.pending_bind=nil;M.seat_hint=nil;M.next_bind=0;M.ownership=nil;M.seat_scan=nil;M.entry_new_seen={};M.entry_owned_cursor=1;clear_values()
+- end
+- if M.clock>=(M.next_bind or 0) then
+-  M.next_bind=M.clock+(M.hull and 0.5 or 0.2)
+-  bind_current_vehicle(session,avatar,owned_ids)
+- end
+- refresh_bound(session,set)
+- if not M.hull or not M.hp then clear();return end
++  M.seated=true;M.hull=nil;M.vehicle_ref=nil;M.bind_retry=0;M.bind_weak=false;M.seat_enter_frame=M.frame;M.seat_enter_time=M.clock
++  M.pending_bind=nil;M.seat_hint=nil;M.next_bind=0;M.ownership=nil;M.seat_scan=nil;M.entry_new_seen={};M.entry_owned_cursor=1
++  FRV.reset();clear_values();log('HUD_ENTER avatar='..avatar)
++ end
++ local mode=FRV.poll(session,avatar)
++ if mode=='LEGACY' then
++  if M.clock>=(M.next_bind or 0) then M.next_bind=M.clock+(M.hull and 0.5 or 0.2);bind_current_vehicle(session,avatar,owned_ids) end
++  refresh_bound(session,set)
++ elseif mode=='TANK' and not FRV.grace_until then refresh_bound(session,set) end
++ local show_frv=mode=='FRV' and FRV.vehicle~=nil
++ if not show_frv and (not M.hull or M.hp==nil) then clear();return end
+  if not M.gui or not live(worlds,M.gui_world) then
+-  surface_reset(worlds);for _,v in ipairs(worlds) do if v~=world then M.gui_world=v;break end end
++  surface_reset(worlds)
++  for _,v in ipairs(worlds) do if v~=world then M.gui_world=v;break end end
+   if M.gui_world then M.gui=call(World.create_screen_gui,M.gui_world,'scale',1,1) end
+  end
+  if not M.gui then return end
+  if sr.Window and call(sr.Window.show_cursor)==true then clear();return end
+- local w,h=call(Gui.resolution);if type(w)=='number' and type(h)=='number' and w>0 and h>0 then draw(w,h) end
++ local w,h=call(Gui.resolution)
++ if type(w)~='number' or type(h)~='number' or w<=0 or h<=0 then return end
++ if show_frv then
++  local ok,err=pcall(FRV.draw,w,h)
++  if not ok then
++   pcall(clear)
++   if M.clock>=(FRV.draw_error_at or 0) then log('FRV_DRAW_ERROR '..tostring(err));FRV.draw_error_at=M.clock+10 end
++  end
++ else draw(w,h) end
+ end
+ local old=rawget(_G,'update');if type(old)~='function' then return {installed=false} end
+ rawset(_G,'__DRIVER_HUD_INSTALLED',true)
+-local failed=false
+-rawset(_G,'update',function(...) if not failed then local ok,err=pcall(update,...);if not ok then failed=true;pcall(clear);log('ERROR '..tostring(err)) end end return old(...) end)
+-local stop=rawget(_G,'shutdown');rawset(_G,'shutdown',function(...) pcall(surface_reset,call(App.worlds) or {});if type(stop)=='function' then return stop(...) end end)
+-return {installed=true}+local retry_at=0
++local perf={start=0,frames=0,total=0,maximum=0}
++rawset(_G,'update',function(...)
++ if M.clock>=retry_at then
++  local began=C.perf and os.clock()
++  local ok,err=pcall(update,...)
++  if began then
++   local elapsed=math.max(0,os.clock()-began)*1000
++   perf.frames=perf.frames+1;perf.total=perf.total+elapsed;perf.maximum=math.max(perf.maximum,elapsed)
++   if M.clock-perf.start>=10 then
++    local stats=Native.win and Native.win.stats or {reads=0,queries=0,bytes=0}
++    log(string.format('PERF mode=%s frames=%d update_cpu_ms_avg=%.4f update_cpu_ms_max=%.4f rpm=%d virtual_query=%d bytes=%d',
++     tostring(FRV.mode),perf.frames,perf.total/perf.frames,perf.maximum,stats.reads,stats.queries,stats.bytes))
++    stats.reads=0;stats.queries=0;stats.bytes=0
++    perf={start=M.clock,frames=0,total=0,maximum=0}
++   end
++  end
++  if not ok then
++   pcall(clear);pcall(full_reset);retry_at=M.clock+1;log('HUD_RECOVERABLE_ERROR '..tostring(err))
++  end
++ else
++  -- Keep the retry clock moving without running failed rendering/native work.
++  local dt=select(1,...)
++  M.clock=M.clock+(type(dt)=='number' and dt==dt and math.max(0,math.min(0.25,dt)) or 0.016667)
++ end
++ return old(...)
++end)
++local stop=rawget(_G,'shutdown')
++rawset(_G,'shutdown',function(...)
++ pcall(surface_reset,call(App.worlds) or {});pcall(full_reset)
++ if type(stop)=='function' then return stop(...) end
++end)
++return {installed=true}

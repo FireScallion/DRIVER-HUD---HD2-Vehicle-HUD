@@ -7,13 +7,22 @@ local function update(dt)
  local worlds=call(App.worlds) or {};local world=call(App.main_world)
  if session~=M.session or peer~=M.peer or world~=M.world then
   surface_reset(worlds);full_reset();M.player=nil;M.avatar=nil;M.avatar_valid_at=nil;M.cache={};M.known={};M.preseat_owned={};M.bg_owned_cursor=1
+  M.owned_cache=nil
   M.session,M.peer,M.world=session,peer,world
  end
  if not session or not peer or not live(worlds,world) or call(GS.in_session,session)~=true then clear();full_reset();return end
- local owned=call(GS.objects_owned_by,session,peer)
- if type(owned)~='table' then clear();full_reset();return end
- local set,owned_ids={},{}
- for _,id in pairs(owned) do if integer(id,32766) then set[id]=true;owned_ids[#owned_ids+1]=id end end
+ -- Cache ownership only after native binding, not during legacy acquisition or
+ -- on foot (the latter supplies the pre-entry ownership snapshot).
+ local cached=M.owned_cache
+ local stable=M.seated and (FRV.mode=='FRV' or FRV.mode=='TANK') and not FRV.grace_until
+ if not stable or not cached or M.clock>=cached.until_time then
+  local owned=call(GS.objects_owned_by,session,peer)
+  if type(owned)~='table' then M.owned_cache=nil;clear();full_reset();return end
+  local set,ids={},{}
+  for _,id in pairs(owned) do if integer(id,32766) then set[id]=true;ids[#ids+1]=id end end
+  cached={set=set,ids=ids,until_time=M.clock+0.2};M.owned_cache=cached
+ end
+ local set,owned_ids=cached.set,cached.ids
  -- Player object 0 is legitimate in captured sessions. Vehicle/Avatar GOIDs keep
  -- the existing stricter checks; do not reuse valid_goid() for the player object.
  if M.player==nil or not set[M.player] or call(GS.game_object_is_type,session,M.player,'un6y1d')~=true then
@@ -58,7 +67,7 @@ local function update(dt)
  if mode=='LEGACY' then
   if M.clock>=(M.next_bind or 0) then M.next_bind=M.clock+(M.hull and 0.5 or 0.2);bind_current_vehicle(session,avatar,owned_ids) end
   refresh_bound(session,set)
- elseif mode=='TANK' then refresh_bound(session,set) end
+ elseif mode=='TANK' and not FRV.grace_until then refresh_bound(session,set) end
  local show_frv=mode=='FRV' and FRV.vehicle~=nil
  if not show_frv and (not M.hull or M.hp==nil) then clear();return end
  if not M.gui or not live(worlds,M.gui_world) then
@@ -81,9 +90,22 @@ end
 local old=rawget(_G,'update');if type(old)~='function' then return {installed=false} end
 rawset(_G,'__DRIVER_HUD_INSTALLED',true)
 local retry_at=0
+local perf={start=0,frames=0,total=0,maximum=0}
 rawset(_G,'update',function(...)
  if M.clock>=retry_at then
+  local began=C.perf and os.clock()
   local ok,err=pcall(update,...)
+  if began then
+   local elapsed=math.max(0,os.clock()-began)*1000
+   perf.frames=perf.frames+1;perf.total=perf.total+elapsed;perf.maximum=math.max(perf.maximum,elapsed)
+   if M.clock-perf.start>=10 then
+    local stats=Native.win and Native.win.stats or {reads=0,queries=0,bytes=0}
+    log(string.format('PERF mode=%s frames=%d update_cpu_ms_avg=%.4f update_cpu_ms_max=%.4f rpm=%d virtual_query=%d bytes=%d',
+     tostring(FRV.mode),perf.frames,perf.total/perf.frames,perf.maximum,stats.reads,stats.queries,stats.bytes))
+    stats.reads=0;stats.queries=0;stats.bytes=0
+    perf={start=M.clock,frames=0,total=0,maximum=0}
+   end
+  end
   if not ok then
    pcall(clear);pcall(full_reset);retry_at=M.clock+1;log('HUD_RECOVERABLE_ERROR '..tostring(err))
   end

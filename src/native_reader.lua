@@ -51,7 +51,23 @@ local Native = (function()
   local b=self:read(p,n);self.seen[key]=b;self.watches[#self.watches+1]={p,n,b};return b
  end
  function G:validate()
-  for _,w in ipairs(self.watches) do if self:read(w[1],w[2])~=w[3] then error('identity changed during sample',0) end end
+  -- Adjacent/overlapping watched ranges share one fresh read. Compare only the
+  -- original bytes; never validate against cached first-pass data or padding.
+  local ordered={};for i,w in ipairs(self.watches) do ordered[i]=w end
+  table.sort(ordered,function(a,b)return a[1]<b[1]end)
+  local i=1
+  while i<=#ordered do
+   local first=ordered[i][1];local finish=first+ordered[i][2];local j=i+1
+   while j<=#ordered and ordered[j][1]<=finish and math.max(finish,ordered[j][1]+ordered[j][2])-first<=4096 do
+    finish=math.max(finish,ordered[j][1]+ordered[j][2]);j=j+1
+   end
+   local fresh=self:read(first,finish-first)
+   for k=i,j-1 do
+    local w=ordered[k];local offset=w[1]-first
+    if fresh:sub(offset+1,offset+w[2])~=w[3] then error('identity changed during sample',0) end
+   end
+   i=j
+  end
  end
  function G:root(name)
   local p=ptr(self:watch(self.base+N.roots[name],8),0)
@@ -112,15 +128,18 @@ local Native = (function()
   local net,seater=self:root('network'),self:root('seater')
   local av=self:net(net,avatar_goid,false)
   if not av then error('avatar not in native network table',0) end
+  self.relation_avatar=av -- Observations also invalidate stale-display grace on a later short read.
   self:roundtrip(net,av)
   local j,ad=self:component(seater,av.entity,0x20,0x38)
-  if j==nil then self:validate();return {status='NO_SEATER'} end
+  if j==nil then self.relation_absent=true;self:validate();return {status='NO_SEATER'} end
   if not same(av,ad) then error('Seater avatar mismatch',0) end
   local base=ptr(self:watch(seater+0x48,8),0)
   local e=u32(self:watch(base+j*0x40,4),0)
+  self.relation_collection=e
   if e==0 or e==4294967295 then self:validate();return {status='EMPTY'} end
   local d=self:net(net,e,true)
   if not d or d.goid<=0 or d.goid>=32767 then error('collection not network-linked',0) end
+  self.relation_vehicle=d
   self:roundtrip(net,d)
   local role=i32(self:read(base+j*0x40+0x1C,4),0)
   self:validate()
@@ -185,9 +204,18 @@ local Native = (function()
   local max={}
   for i=0,3 do
    local zone=cfg+0x208+i*0x228
-   local name=string.format('%08x',u32(self:watch(zone+96,4),0))
+   -- Read zone identity and maximum together, but watch only the identity.
+   -- The intervening config bytes are not identity guards.
+   local block=self:read(zone+96,140)
+   local key=string.format('%.0f:%d',zone+96,4)
+   local name_bytes=self.seen[key]
+   if not name_bytes then
+    name_bytes=block:sub(1,4);self.seen[key]=name_bytes
+    self.watches[#self.watches+1]={zone+96,4,name_bytes}
+   end
+   local name=string.format('%08x',u32(name_bytes,0))
    if name~=expected_zones[i+1] then error('wheel zone identity mismatch',0) end
-   local mx=i32(self:read(zone+232,4),0)
+   local mx=i32(block,136)
    if mx<=0 or mx>1000000 then error('invalid wheel maximum',0) end
    max[i+1]=mx
   end
@@ -213,23 +241,39 @@ local Native = (function()
   end
   local out={hp=hp,hp_valid=hp_valid,max=max,body=i32(data,0x14),damage=N.q4(u32(data,0x20)),
    state_low=u32(data,0x20),health_index=hi,health_record=record,flags=hd.flags,precision='UNKNOWN'}
-  -- SyncedHealth is ancillary: its absence must not manufacture values or
-  -- suppress a valid Health damage state. A complete snapshot still rechecks IDs.
-  local sm=ptr(self:watch(self.base+N.roots.synced,8),0)
-  if sm~=0 then
-   local si,sd=self:component(sm,d.entity,0x20,0x38)
-   if si~=nil then
-    if not same(hd,sd) then error('SyncedHealth owner mismatch',0) end
-    local array=ptr(self:watch(sm+0x40,8),0);local rep=ptr(self:watch(sm+0x50,8),0)
-    local cache=self:read(array+si*0xC0,16);local word=u32(self:read(rep+si*16+4,4),0)
-    out.q=N.q4(word);out.cache={};out.synced_flags=sd.flags
-    for i=0,3 do out.cache[i+1]=i32(cache,4*i) end
-    if hd.flags%2==1 and sd.flags%2==1 then out.precision='LOCAL_RUNTIME'
-    else out.precision='QUANTIZED_OR_UNKNOWN' end
+  -- Isolate ancillary watches as well as exceptions. Reserve the unchanged
+  -- core validation cost so sync trouble cannot exhaust the core's budget.
+  local reserve_calls,reserve_bytes=#self.watches,0
+  for _,w in ipairs(self.watches) do reserve_bytes=reserve_bytes+w[2] end
+  local sync=N.graph(function(p,n)
+   if self.calls+1+reserve_calls>960 or self.bytes+n+reserve_bytes>65536 then
+    error('ancillary sample budget',0)
    end
-  end
+   return self:read(p,n)
+  end,self.base)
+  local ok,extra=pcall(function()return sync:synced_health(hd)end)
+  out.sync_valid=ok and extra~=nil
+  if out.sync_valid then
+   out.q=extra.q;out.cache=extra.cache;out.synced_flags=extra.flags
+   if hd.flags%2==1 and extra.flags%2==1 then out.precision='LOCAL_RUNTIME'
+   else out.precision='QUANTIZED_OR_UNKNOWN' end
+  else out.sync_error=ok and 'SyncedHealth absent' or tostring(extra) end
+  -- Always recheck core owner/configuration AFTER ancillary reads, even when
+  -- they failed. No failed sync watch or partial result is merged into core.
   self:validate();out.bytes=self.bytes;out.calls=self.calls
   return out
+ end
+ function G:synced_health(d)
+  local sm=ptr(self:watch(self.base+N.roots.synced,8),0)
+  if sm==0 then return nil end
+  local si,sd=self:component(sm,d.entity,0x20,0x38)
+  if si==nil then return nil end
+  if not same(d,sd) then error('SyncedHealth owner mismatch',0) end
+  local array=ptr(self:watch(sm+0x40,8),0);local rep=ptr(self:watch(sm+0x50,8),0)
+  local cache=self:read(array+si*0xC0,16);local word=u32(self:read(rep+si*16+4,4),0)
+  local out={q=N.q4(word),cache={},flags=sd.flags}
+  for i=0,3 do out.cache[i+1]=i32(cache,4*i) end
+  self:validate();return out
  end
  N.guards={{0xd3e734,"4c8b1d8509a301448bc24c8bc981faff7f000075108b055d8ea4018901488bc1"},{0x634244,"4c8b1d4d88130245896f1041c7471cffffffff41893f3b3d002a1502"},{0x9171b7,"488b4d408bd8488b0cd9e87ab6beff4869cbb8010000488b5c243048034d50488b6c243848056802000039307426ff"},{0x6aaae8,"8b81f80000004189028b81fc000000418942048b8100010000418942088b81040100004189420c"},{0x6ac968,"488d144048c1e20641ffd18b0b33d2488943404c8d0449488bc849c1e006e855ba72"},{0x6ab270,"478b4cb4048d4bfc448b97d8fdffff418bc1d3e80f57c983e003f3480f2ac8f30f5eca4183fa"}}
  function N.check_module(read,base)
@@ -261,7 +305,10 @@ local Native = (function()
   local loaded,k=pcall(ffi.load,'kernel32');if not loaded then return nil,'kernel32 unavailable' end
   local h=k.GetCurrentProcess();local buffer=ffi.new('uint8_t[4096]')
   local got=ffi.new('size_t[1]');local mbi=ffi.new('uint8_t[48]')
-  local w={}
+  local w={stats={reads=0,queries=0,bytes=0}};local regions={}
+  -- Protection metadata lives for one synchronous native sample only. RPM still
+  -- checks every copy, including validation reads, if a region changes meanwhile.
+  function w.begin_sample() regions={} end
   function w.base()
    local p=k.GetModuleHandleA('game.dll')
    if p==nil then return nil end
@@ -269,17 +316,27 @@ local Native = (function()
   end
   function w.read(p,n)
    addr(p,n)
+   if N.perf then w.stats.reads=w.stats.reads+1;w.stats.bytes=w.stats.bytes+n end
    local at,finish=p,p+n
    for _=1,4 do
     if at>=finish then break end
-    local z=tonumber(k.VirtualQuery(ffi.cast('const void *',at),ffi.cast('void *',mbi),48))
-    if z~=48 then return nil end
-    local b=ffi.string(mbi,48);local start=ptr(b,0);local extent=ptr(b,24)
-    local state,protection=u32(b,32),u32(b,36);local kind=protection%256
-    if state~=4096 or math.floor(protection/256)%2==1
-     or not (kind==2 or kind==4 or kind==8 or kind==32 or kind==64 or kind==128)
-     or start>at or extent==0 or start+extent<=at then return nil end
-    at=math.min(finish,start+extent)
+    local region_end
+    for _,r in ipairs(regions) do
+     if at>=r[1] and at<r[2] then region_end=r[2];break end
+    end
+    if not region_end then
+     if N.perf then w.stats.queries=w.stats.queries+1 end
+     local z=tonumber(k.VirtualQuery(ffi.cast('const void *',at),ffi.cast('void *',mbi),48))
+     if z~=48 then return nil end
+     local b=ffi.string(mbi,48);local start=ptr(b,0);local extent=ptr(b,24)
+     local state,protection=u32(b,32),u32(b,36);local kind=protection%256
+     if state~=4096 or math.floor(protection/256)%2==1
+      or not (kind==2 or kind==4 or kind==8 or kind==32 or kind==64 or kind==128)
+      or start>at or extent==0 or start+extent<=at then return nil end
+     region_end=start+extent
+     regions[#regions+1]={start,region_end}
+    end
+    at=math.min(finish,region_end)
    end
    if at<finish then return nil end
    got[0]=0
@@ -300,6 +357,7 @@ local Native = (function()
   end
   local base=N.win.base()
   if not base then N.ready=false;N.next_check=now+1;N.reason='game.dll not yet loaded';return false,N.reason end
+  N.win.begin_sample()
   local ok,valid,why=pcall(N.check_module,N.win.read,base)
   if not ok or not valid then
    N.ready=false;N.reason=why or tostring(valid)
@@ -308,16 +366,29 @@ local Native = (function()
   end
   N.ready=true;N.base=base;N.reason=why;return true
  end
- function N.relation(avatar,now)
+ function N.sample_graph()
+  N.win.begin_sample()
+  return N.graph(N.win.read,N.base)
+ end
+ function N.relation(avatar,now,previous)
   local valid,why=N.ensure(now)
-  if not valid then return nil,why end
-  local ok,result=pcall(function()return N.graph(N.win.read,N.base):relation(avatar)end)
-  if ok then return result end;return nil,tostring(result)
+  if not valid then return nil,why,'UNAVAILABLE' end
+  local g=N.sample_graph()
+  local ok,result=pcall(function()return g:relation(avatar)end)
+  if ok then return result end
+  local changed=g.relation_absent or (previous and (
+   (g.relation_avatar and not same(g.relation_avatar,previous.avatar)) or
+   (g.relation_collection and g.relation_collection~=previous.vehicle.entity) or
+   (g.relation_vehicle and not same(g.relation_vehicle,previous.vehicle))))
+  -- Only a proven short read may retain a display. Owner mismatches, changed
+  -- watches, version failures and unclassified errors remain fail-closed.
+  local kind=not changed and result=='incomplete native read' and 'TRANSIENT_READ' or 'INVALID'
+  return nil,tostring(result),kind
  end
  function N.resolve_proxy(collection,known_resources)
   if not N.ready then return nil,'native version not validated' end
   local ok,result,meta=pcall(function()
-   local g=N.graph(N.win.read,N.base)
+   local g=N.sample_graph()
    local d,m=g:frv_hull_for_proxy(collection,known_resources)
    g:validate();return d,m
   end)
@@ -326,8 +397,10 @@ local Native = (function()
  end
  function N.health(vehicle,zones)
   if not N.ready then return nil,'native version not validated' end
-  local ok,result=pcall(function()return N.graph(N.win.read,N.base):health(vehicle,zones)end)
+  local ok,result=pcall(function()return N.sample_graph():health(vehicle,zones)end)
   if ok then return result end;return nil,tostring(result)
  end
  return N
 end)()
+
+Native.perf=C.perf
