@@ -1,0 +1,16 @@
+{
+  "Version": 1,
+  "Guid": "9e31f36d-3865-4af5-b9b3-5368261394d0",
+  "Name": "DRIVER HUD 1.3.2",
+  "Description": "Tank + HMG/Supply FRV HUD for Bingus Shared Loader v15 / API 1. Adds per-wheel Health fault isolation, FRV HUD configurator, and per-game-process log rotation.",
+  "Options": [
+    {
+      "Name": "Core",
+      "Description": "Required. DRIVER HUD module for Bingus Shared Loader v15 / API 1.",
+      "Include": [
+        "CORE"
+      ]
+    }
+  ],
+  "IconPath": "icon.png"
+}

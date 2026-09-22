@@ -1,53 +1,79 @@
 # DRIVER HUD — HD2 Vehicle HUD
 
-<img src="mod/icon.png" alt="DRIVER HUD icon" width="128">
+A lightweight vehicle-status HUD mod for **Helldivers 2**.
 
-A lightweight vehicle-status HUD mod for **HELLDIVERS 2**.
+**Current version: 1.3.2**  
+[中文说明](README_中文.md) · [Nexus Mods](https://www.nexusmods.com/helldivers2/mods/16358) · [Latest GitHub Release](https://github.com/FireScallion/DRIVER-HUD---HD2-Vehicle-HUD/releases/latest)
 
-DRIVER HUD currently supports the **Bastion tank**, displaying hull health, main-gun ammunition, coaxial machine-gun ammunition, and a center-screen reticle in both the driver and gunner seats. Support for additional vehicles such as FRVs may be explored in separate experimental builds before being merged into the main release.
+## Supported vehicles
 
-> Current release: **1.2.1**
+### Bastion tank
 
-## Features
+- Hull HP with current / maximum value and health bar.
+- Main-gun ammunition.
+- Coaxial machine-gun ammunition.
+- Center-screen reticle.
+- Works in both the driver and gunner seats.
+- Full main-gun load is 31 rounds (30+1).
 
-- Bastion hull health
-- Bastion main-gun ammunition — **31 rounds when fully loaded**
-- Bastion coaxial machine-gun ammunition
-- Center-screen reticle
-- Works in both the driver and gunner seats
-- Diagnostic logging enabled by default for easier issue reports
-- No process-memory reading; the current implementation uses Stingray Lua/network APIs with runtime object/schema validation
+### HMG FRV and Supply FRV
 
-## Requirements
+- Vehicle body HP.
+- Independent condition display for all four tires.
+- Continuous durability bar inside each tire; individual tire HP numbers are not shown.
+- Destroyed tires switch to a hub-only visual state.
+- Tire order is **LF / RF / LR / RR** when facing forward.
+- FRV body outline, window outline, and HP number change color with body condition:
+  - above 75%: white
+  - 75% or lower: yellow
+  - 50% or lower: red
+- FRV HUD position and scale can be changed with the included graphical configurator.
 
-- **Bingus Shared Loader v15 (BSL, API 1)** — required and installed separately
+DRIVER HUD only displays vehicle state. It does not change vehicle health, damage, ammunition capacity, or other gameplay values.
 
-BSL: https://www.nexusmods.com/helldivers2/mods/16292  
+![FRV HUD preview](docs/frv_ui_preview.png)
+
+## Requirement
+
+**Bingus Shared Loader v15 / API 1** is required and must be installed separately.
+
+- Nexus Mods: https://www.nexusmods.com/helldivers2/mods/16292
+- BSL v15 keeps API 1 compatibility and supports addon discovery for third-party mods.
+
+With Arsenal's default priority behavior, place **Bingus Shared Loader at the bottom of the mod list** so it loads last / has the final effective override priority.
 
 ## Installation
 
-For normal use, download the installable ZIP from the repository's **Releases** page rather than the GitHub source-code archive.
+1. Close the game.
+2. Disable or remove every older DRIVER HUD version, including FRV / Resolver / Probe test builds.
+3. Import the current `DRIVER_HUD_1.3.2.zip` into Arsenal and enable **Core**.
+4. Install and enable **Bingus Shared Loader v15** separately.
+5. Keep BSL at the correct final priority.
+6. Run **Purge**, then **Deploy**.
+7. Launch the game.
 
-Using Arsenal:
+Do not enable multiple DRIVER HUD versions at the same time.
 
-1. Disable or remove older DRIVER HUD versions. Do not enable multiple DRIVER HUD versions at the same time.
-2. Import the DRIVER HUD release ZIP and enable **Core**.
-3. Import and enable Bingus Shared Loader v15.
-4. With Arsenal's default load-priority behavior, place BSL at the bottom so it loads last.
-5. Run **Purge**, then **Deploy**, and start the game.
+## FRV HUD position and scale
 
-Typical order, top to bottom:
+Normal users do not need to edit JSON files.
+
+1. Extract `DRIVER_HUD_1.3.2.zip` to any normal folder.
+2. Double-click `CONFIGURE_FRV_HUD.cmd`.
+3. Adjust horizontal position, vertical position, and scale.
+4. Click **Apply**.
+
+The configurator supports English and Chinese. If the game is already running, the FRV HUD normally picks up the new settings in about two seconds; no Purge, Deploy, or restart is required.
+
+The active configuration is stored at:
 
 ```text
-DRIVER HUD
-Bingus Shared Loader v15
+%APPDATA%\Arrowhead\Helldivers2\frv_hud_position.json
 ```
 
-If **First-Mod Priority** is enabled, the effective priority is reversed; adjust BSL accordingly.
+## Other configuration
 
-## Configuration
-
-The default configuration works without manual changes. To customize it, copy `mod/driver_hud.cfg` to:
+Optional `driver_hud.cfg` can be placed at:
 
 ```text
 %APPDATA%\Arrowhead\Helldivers2\driver_hud.cfg
@@ -55,105 +81,70 @@ The default configuration works without manual changes. To customize it, copy `m
 
 Default values:
 
-```ini
+```text
 debug=true
 offset_y=155
 scale=1
 alpha=0.76
 ```
 
-- `debug`: writes the diagnostic log; enabled by default
-- `offset_y`: vertical HUD position
-- `scale`: HUD scale
-- `alpha`: HUD opacity
+- `offset_y` / `scale` control the Bastion HUD.
+- FRV position and size use the separate configurator.
+- `alpha` affects both HUD styles.
+- Restart the game after editing `driver_hud.cfg`.
 
-Restart the game after changing the configuration.
+## Logs and bug reports
 
-## Issue Reports
-
-If the HUD does not appear or the ammunition display is incorrect, first check that:
-
-- BSL is enabled and loaded with the correct priority
-- no older DRIVER HUD version is still enabled
-- Arsenal has been Purged and Deployed again after changes
-
-Please include this log when reporting a DRIVER HUD issue:
+DRIVER HUD keeps the current and previous game-process logs:
 
 ```text
 %APPDATA%\Arrowhead\Helldivers2\driver_hud.log
+%APPDATA%\Arrowhead\Helldivers2\driver_hud_previous.log
 ```
 
-BSL loader log:
+BSL log:
 
 ```text
 %LOCALAPPDATA%\CowboyBingus\Helldivers2\Logs\BingusSharedLoader.log
 ```
 
-It also helps to mention whether you were in the driver or gunner seat, whether you changed vehicles, whether multiple vehicles were present, and what happened immediately before the issue.
+When reporting an issue, include the DRIVER HUD version, game version, vehicle, seat, host/client status, whether you switched vehicles or seats, and the action sequence immediately before the problem. Please share complete logs privately when possible.
 
-## Repository Layout
+## Building from source
 
-```text
-mod/                  Current installable mod files
-  CORE/               Arsenal/HD2 patch payloads
-  manifest.json
-  driver_hud.cfg
-  ...
-src/
-  driver_hud.lua      Readable Lua payload used by the current patch
-README.md             English project page
-README_zh-CN.md       Chinese project page
-CREDITS.md            Third-party credits and notices
-CONTRIBUTING.md       Contribution and fork policy
-LICENSE               MIT license for project-owned source
-```
-
-`src/driver_hud.lua` is a readable copy of the Lua payload embedded in the current `patch_0` file. The repository does **not currently include an automated patch-build pipeline**, so contributors should treat the packaged files under `mod/` as the current release build and the Lua file under `src/` as the readable source reference.
-
-## Technical Overview
-
-At a high level, DRIVER HUD follows this path:
+The repository contains the editable Lua source, build script, package template, and focused tests used for the release.
 
 ```text
-Local player / avatar
-        ↓
-Current vehicle discovery
-        ↓
-Bastion hull confirmation
-        ↓
-Main / coax GameObject resolution
-        ↓
-Network type + field declaration validation
-        ↓
-Targeted field reads + last-valid cache
-        ↓
-Stingray screen GUI
+python build.py dist/DRIVER_HUD_1.3.2.zip
 ```
 
-The current ammo path was developed using the game's network declarations together with runtime validation. The mod avoids blind high-frequency field guessing and does not read Helldivers 2 process memory.
+The build script assembles `driver_hud.lua` from the 1.2.1 Bastion baseline plus the current FRV/runtime modules, writes the patch payload, and packages the contents of `package/`.
 
-## Scope and Roadmap
+Useful source locations:
 
-The stable release currently supports the **Bastion tank**. Additional vehicle support may be investigated, especially FRVs, but experimental support may remain in separate test builds until it is considered stable enough for the main release.
+```text
+src/native_reader.lua       version-scoped read-only native vehicle/Health reader
+src/frv_runtime.lua         FRV identity, Health, precision, and wheel-state model
+src/frv_ui.lua              FRV geometry and rendering
+src/position_config.lua     FRV position/scale configuration
+src/log_session.lua         per-game-process log rotation
+tests/                      focused offline tests
+package/                    release-package template
+```
 
-No feature or vehicle support is guaranteed on a schedule.
+No game DLLs, process dumps, third-party loaders, or font files are included in this repository.
 
-## Contributing and Forks
+## Development note
 
-Research, modifications, forks, and independently maintained variants are welcome. See [CONTRIBUTING.md](CONTRIBUTING.md).
+The FRV reader uses version-scoped game structures and is designed to fail closed when its compatibility guards do not match. A Helldivers 2 update can therefore require a DRIVER HUD compatibility update even when the UI code itself has not changed.
 
-Please note that the maintainer may not have time to review or merge external pull requests. Maintaining your own fork is completely fine.
+## Open source and credits
 
-## Credits
+Project-owned source code is released under the **MIT License**. Third-party assets and materials retain their original permissions; see [CREDITS.txt](CREDITS.txt).
 
-See [CREDITS.md](CREDITS.md) for third-party sources and acknowledgements.
+Key dependency / reference credits:
 
-## License
+- **CowboyBingus** — Bingus Shared Loader.
+- **DDRK1NG** — HD2 HUD+, used as an important reference during early HUD/bootstrap research; relevant reused material remains separately credited in `CREDITS.txt`.
 
-Project-owned source code in this repository is released under the [MIT License](LICENSE).
-
-Third-party code, tools, game assets, names, interfaces, and identifiers remain subject to their respective licenses and ownership. The MIT license does not relicense third-party material.
-
-## 中文
-
-中文说明见 [README_zh-CN.md](README_zh-CN.md)。
+Helldivers 2 and its game assets, names, interfaces, and identifiers belong to their respective owners. This project is not affiliated with Arrowhead Game Studios or Sony Interactive Entertainment.
