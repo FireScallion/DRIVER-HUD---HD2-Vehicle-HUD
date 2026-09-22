@@ -22,7 +22,6 @@ A lightweight vehicle-status HUD mod for **Helldivers 2**.
 - Independent condition display for all four tires.
 - Continuous durability bar inside each tire; individual tire HP numbers are not shown.
 - Destroyed tires switch to a hub-only visual state.
-- Tire order is **LF / RF / LR / RR** when facing forward.
 - FRV body outline, window outline, and HP number change color with body condition:
   - above 75%: white
   - 75% or lower: yellow
