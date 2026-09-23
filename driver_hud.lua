@@ -1,5 +1,5 @@
 -- HD2-Addon: mods/driverhud/driver_hud
--- DRIVER HUD 1.4.1. Tank + FRV integration with isolated telemetry and bounded read-error grace.
+-- DRIVER HUD 1.4.3. Tank + FRV integration with isolated telemetry and staged reloads and retained display through telemetry gaps.
 local sr = rawget(_G, 'stingray')
 if not sr then return {installed=false} end
 if rawget(_G,'__DRIVER_HUD_INSTALLED') then return {installed=true} end
@@ -117,11 +117,11 @@ local function log(s)
 end
 local LOG_UTC=(os and os.date and call(os.date,'!%Y-%m-%dT%H:%M:%SZ')) or 'unknown'
 if LOG_ROTATION=='same_process' then
- log('DRIVER_HUD SCRIPT_RELOAD version=1.4.1 pid='..tostring(LOG_SESSION_PID or 'unknown')..' utc='..tostring(LOG_UTC))
+ log('DRIVER_HUD SCRIPT_RELOAD version=1.4.3 pid='..tostring(LOG_SESSION_PID or 'unknown')..' utc='..tostring(LOG_UTC))
 else
- log('DRIVER_HUD SESSION_START version=1.4.1 pid='..tostring(LOG_SESSION_PID or 'unknown')..' session='..tostring(LOG_SESSION_KEY)..' rotation='..tostring(LOG_ROTATION)..' utc='..tostring(LOG_UTC))
+ log('DRIVER_HUD SESSION_START version=1.4.3 pid='..tostring(LOG_SESSION_PID or 'unknown')..' session='..tostring(LOG_SESSION_KEY)..' rotation='..tostring(LOG_ROTATION)..' utc='..tostring(LOG_UTC))
 end
-log('DRIVER_HUD 1.4.1 START native_contract=r4-73374bd4 proxy_unit_health=1 wheel_fault_isolation=1 robustness_pass=1 geometry_numbers='..tostring(C.geometry_numbers))
+log('DRIVER_HUD 1.4.3 START native_contract=r4-73374bd4 proxy_unit_health=1 wheel_fault_isolation=1 robustness_pass=1 geometry_numbers='..tostring(C.geometry_numbers))
 local FRV, Tank -- Forward declarations for lifecycle reset.
 local M={ids={},frame=0,clock=0,seated=false,hull=nil,vehicle_ref=nil,cache={},known={},bind_retry=0,bind_weak=false,seat_enter_frame=0,preseat_owned={},entry_new_seen={},entry_owned_cursor=1,bg_owned_cursor=1}
 local function clear()
@@ -148,15 +148,21 @@ local function integer(n,hi) return type(n)=='number' and n==math.floor(n) and n
 -- One shared native batch budget; time-based, never catch-up bursts.
 local batch_clock,batch_tokens,batch_frame,batch_count=0,4,-1,0
 local discovery_clock,discovery_tokens=0,2
+-- Shared global batch budget; the second return value exposes the gate.
 local function sample(session,id)
  local now=M.clock
  batch_tokens=math.min(4,batch_tokens+math.max(0,now-batch_clock)*40);batch_clock=now
  if batch_frame~=M.frame then batch_frame=M.frame;batch_count=0 end
- if batch_tokens<1 or batch_count>=4 then return nil end
- if type(id)~='number' or call(GS.game_object_exists,session,id)~=true then return nil end
+ if batch_tokens<1 or batch_count>=4 then return nil,'budget' end
+ if type(id)~='number' then return nil,'invalid_id' end
+ local exists=call(GS.game_object_exists,session,id)
+ if exists~=true then return nil,'exists_'..tostring(exists) end
+ if type(GS.game_object_field_batched)~='function' then return nil,'api_absent' end
  batch_tokens=batch_tokens-1;batch_count=batch_count+1
- local f=call(GS.game_object_field_batched,session,id,{})
- return type(f)=='table' and f or nil
+ local ok,f=pcall(GS.game_object_field_batched,session,id,{})
+ if not ok then return nil,'api_error' end
+ if type(f)~='table' then return nil,'api_'..type(f) end
+ return f,'table'
 end
 local function discovery_sample(session,id)
  local now=M.clock
@@ -317,7 +323,7 @@ local function refresh_known_masks(session,force)
  if #keys==0 then return end
  M.mask_cursor=(M.mask_cursor or 0)%#keys+1
  local hid=keys[M.mask_cursor]
- if call(GS.game_object_exists,session,hid)~=true then M.known[hid]=nil;return end
+ if call(GS.game_object_exists,session,hid)==false then M.known[hid]=nil;return end
  local hf=discovery_sample(session,hid)
  if hull_sig(hf) then remember_hull(hid,hf) end
 end
@@ -864,7 +870,7 @@ local function read_main(session,mid,c)
    log('MAIN_BATCH_SHAPE goid='..tostring(mid)..' count='..tostring(observed))
   end
   if main_sig(mf) then
-   local t=mf[5]+mf[6]
+   a,b=mf[5],mf[6];local t=a+b
    if integer(t,31) then total=t end
   end
  end
@@ -878,7 +884,7 @@ local function read_main(session,mid,c)
  if total~=nil then
   diag.valid=diag.valid+1
   if c.ammo~=nil and total~=c.ammo then diag.changed=diag.changed+1 end
-  c.ammo=total;c.main_seen=true;c.main_valid_at=M.clock
+  c.main_reserve=a;c.main_current=bit01(b);c.ammo=total;c.main_seen=true;c.main_valid_at=M.clock
  end
  if M.clock-diag.start>=10 then
   log('MAIN_READ goid='..tostring(mid)..' mode='..mode..' seconds='..string.format('%.1f',M.clock-diag.start)..' attempts='..diag.attempts..' valid='..diag.valid..' changed='..diag.changed..' ammo='..tostring(c.ammo))
@@ -903,20 +909,9 @@ local function refresh_bound(session,owned_set)
    if due('next_weapon_resolve',1) then resolve_bound_weapon_ids(session,hid,hf,c) end
   end
  end
- if now-(c.hull_valid_at or c.bound_at or now)>3 then
-  log('BASTION_STALE hull='..hid);M.hull=nil;M.cache={};clear_values();return
- end
  local mid,cid=c.main_id,c.coax_id
  if due('next_main',0.1) and valid_goid(session,mid) then read_main(session,mid,c) end
  if due('next_coax',0.1) and valid_goid(session,cid) then read_coax(session,cid,c) end
- if c.main_valid_at and now-c.main_valid_at>3 then
-  if c.ammo~=nil then log('MAIN_STALE goid='..tostring(mid)) end
-  c.ammo=nil;c.next_weapon_resolve=0;c.main_profile=nil;c.main_scan_done=nil
- end
- if c.coax_valid_at and now-c.coax_valid_at>3 then
-  if c.mg~=nil then log('COAX_STALE goid='..tostring(cid)) end
-  c.mg=nil;c.next_weapon_resolve=0
- end
  M.hp,M.max,M.ammo,M.mg=c.hp,c.max,c.ammo,c.mg
 end
 
@@ -1338,6 +1333,70 @@ local Native = (function()
   local ok,result=pcall(function()return N.sample_graph():health(vehicle,zones)end)
   if ok then return result end;return nil,tostring(result)
  end
+-- Included INSIDE Native's lexical scope. Read-only component snapshots; no FFI calls
+-- into game functions. Layout derives from the supplied 73374bd4 loaded module.
+-- Each attempt re-resolves GOID -> descriptor -> entity -> component owner.
+N.weapon_guards={
+ {0x76e1da,"4c8b156784bb02"},
+ {0x76e1ea,"458b4a284533c048895c2430418b5a3048896c24"},
+ {0x76e259,"8bd0488d0452488d0c8500000000498b4250c7040100000000498b42384d8b42504c03c1488b0cd0ba8b9164ec8b49104883c428"},
+ {0x76e339,"8bd0488d0452488d0c8500000000498b425044897401044d8b4250498b42384983c0044c03c1488b0cd0ba3ed6a5d78b49104883c420415ee9"},
+ {0x76fece,"0f57c0418bc048c1e004480343480f1100488b433848893cc8488d4b208b5708e8cdf7fb00ff430c"},
+ {0x77760f,"4c8b155af4ba02"},
+ {0x77769a,"8bc84584ff498b42504c8b7c2420488d14888b0488740e0bc3eb0e"},
+ {0x7776c3,"8902babc9d88cd498b42504c8d0488498b4238488b0cc88b4910"},
+ {0x77a11a,"488b3dcfcbba02"},
+ {0x77a04b,"448b49304533c048895c24308b5938"},
+ {0x77a0b9,"8bd0488d0492488d0c8500000000498b425844897401044d8b4258498b42404983c0044c03c1488b0cd0bad5f04ea78b49104883c42041"},
+ {0x77a203,"4c8b47584983c0084d8d0490ba955bec048bf0488b47402bf14a8b0cf08b4910e8b8f58500"},
+ {0x77a1cd,"4c8b47584983c00c4d8d0490ba9cfa25e5"},
+}
+function N.check_weapon_module(read,base)
+ for _,v in ipairs(N.weapon_guards) do
+  local want=v[2]:gsub('..',function(h)return string.char(tonumber(h,16))end)
+  if read(base+v[1],#want)~=want then return false,string.format('weapon code guard 0x%X',v[1]) end
+ end
+ return true
+end
+function G:weapon_component(d,root_rva,to,dp,array_offset,stride,n)
+ local manager=ptr(self:watch(self.base+root_rva,8),0)
+ if manager==0 then return nil end
+ local j,owner=self:component(manager,d.entity,to,dp)
+ if j==nil then return nil end
+ if not same(owner,d) then error('weapon component owner mismatch',0) end
+ local array=ptr(self:watch(manager+array_offset,8),0)
+ -- Values copied once; validate identity/table/array pointers after the copy.
+ return self:read(array+j*stride,n)
+end
+function G:weapon(goid,previous)
+ local net=self:root('network');local d=self:net(net,goid,false)
+ if not d then error('weapon GOID absent',0) end
+ self:roundtrip(net,d)
+ if previous and not same(d,previous) then error('weapon identity changed',0) end
+ local out={descriptor=d}
+ local mag=self:weapon_component(d,0x3326648,0x20,0x38,0x50,12,9)
+ if mag then out.magazine={reserve=i32(mag,0),current=i32(mag,4),chamber_empty=mag:byte(9)} end
+ local rounds=self:weapon_component(d,0x3326CF0,0x28,0x40,0x58,20,17)
+ if rounds then out.rounds={reserve=i32(rounds,0),selected=i32(rounds,4),rounds_0=i32(rounds,8),rounds_1=i32(rounds,12),chamber_empty=rounds:byte(17)} end
+ local reload=self:weapon_component(d,0x3326A70,0x20,0x38,0x50,4,4)
+ if reload then local state=u32(reload,0);if state<=7 then out.state=state end end
+ self:validate();out.calls=self.calls;out.bytes=self.bytes
+ return out
+end
+function N.weapon(goid,previous)
+ if not N.ready or not N.win then return nil,'native version not validated' end
+ if N.weapon_base~=N.base then
+  N.weapon_base=N.base
+  N.win.begin_sample()
+  local ok,valid,why=pcall(N.check_weapon_module,N.win.read,N.base)
+  N.weapon_ready=ok and valid;N.weapon_reason=why or tostring(valid)
+ end
+ if not N.weapon_ready then return nil,N.weapon_reason end
+ local ok,value=pcall(function()return N.sample_graph():weapon(goid,previous)end)
+ if ok then return value end
+ return nil,tostring(value)
+end
+
  return N
 end)()
 
@@ -1618,16 +1677,17 @@ function FRV.clear_identity(reason)
  FRV.invalidate(reason);FRV.drop_tank();FRV.mode='NONE'
 end
 function FRV.can_hold(session,avatar)
+ local function retained(id)return integer(id,32766) and id>0 and call(GS.game_object_exists,session,id)~=false end
  if FRV.relation_session~=session or FRV.relation_avatar~=avatar then return false end
- if not FRV.last_relation or not valid_goid(session,FRV.last_relation.vehicle.goid) then return false end
+ if not FRV.last_relation or not retained(FRV.last_relation.vehicle.goid) then return false end
  if FRV.mode=='FRV' then
-  return FRV.vehicle~=nil and valid_goid(session,FRV.vehicle.goid)
- elseif FRV.mode=='TANK' then return valid_goid(session,M.hull) end
+  return FRV.vehicle~=nil and retained(FRV.vehicle.goid)
+ elseif FRV.mode=='TANK' then return retained(M.hull) end
  return false
 end
 function FRV.poll(session,avatar)
- -- Check expiry every frame, not just at 10 Hz: a stalled poll cannot extend grace.
- if FRV.grace_until and (M.clock>=FRV.grace_until or not FRV.can_hold(session,avatar)) then
+ -- Explicit destruction ends retention even while the native reader is unavailable.
+ if FRV.grace_until and not FRV.can_hold(session,avatar) then
   FRV.clear_identity('native_read_grace_expired')
  end
  if M.clock<FRV.next_poll then return FRV.mode end
@@ -1638,8 +1698,8 @@ function FRV.poll(session,avatar)
    log('NATIVE_UNAVAILABLE kind='..tostring(kind)..' reason='..tostring(why));FRV.last_error=why;FRV.native_error_at=M.clock+10
   end
   if kind=='TRANSIENT_READ' and FRV.last_relation and FRV.relation_at
-   and M.clock<FRV.relation_at+0.3 and FRV.can_hold(session,avatar) then
-   if not FRV.grace_until then log('NATIVE_READ_GRACE seconds=0.3 mode='..FRV.mode) end
+   and FRV.can_hold(session,avatar) then
+   if not FRV.grace_until then log('NATIVE_READ_GRACE retain_until_identity_result=true mode='..FRV.mode) end
    FRV.grace_until=FRV.relation_at+0.3
    return FRV.mode -- Display only: no Health refresh or alternative vehicle search.
   end
@@ -1707,9 +1767,9 @@ function FRV.poll(session,avatar)
  return FRV.poll_tank(session,collection)
 end
 
--- 1.4.0: observed, resource-scoped batched telemetry. NO guessed field names,
--- type brute force, world scan, GOID adjacency binding or ammo prediction.
-Tank={active=nil,history={},history_serial=0,MAX_HISTORY=8,KEEP_PROGRESS=120,STALE_AFTER=3,ANIMATION_GRACE=1}
+-- 1.4.3: staged reload and retained telemetry. Raw ammo values; no ammo prediction.
+-- No type brute force, world scan, GOID adjacency binding or ammo prediction.
+Tank={active=nil,history={},history_serial=0,MAX_HISTORY=8,KEEP_PROGRESS=120,STALE_AFTER=3,RELOAD_STALE_AFTER=1}
 Tank.NEW_RESOURCE='b0c9faf4af8903f9'
 local function tank_copy(t) local o={};for k,v in pairs(t or {}) do o[k]=v end;return o end
 function Tank.context_key()
@@ -1721,66 +1781,77 @@ function Tank.is_new()
  local d=FRV.last_relation and FRV.last_relation.vehicle
  return FRV.mode=='TANK' and d and d.goid==M.hull and d.resource==Tank.NEW_RESOURCE
 end
+-- Observed stage durations/checkpoints, used only to animate the indicator.
+Tank.stages={old={{4,1.256},{5,1.249},{7,.566},{4,.929}},new={{4,.06},{5,2.50},{7,1.43}}}
 function Tank.new_reload(kind)
- return {kind=kind,phase='idle',elapsed=0,tick_at=M.clock,last_seen=nil,known_start=false,committed=false}
+ return {kind=kind,phase='idle',elapsed=0,stage_elapsed=0,tick_at=M.clock,checkpoints={}}
+end
+local function tank_stage_start(r,stage)
+ local t=0;for i=1,stage-1 do t=t+Tank.stages[r.kind][i][2] end;return t
 end
 function Tank.advance(r,now)
  local dt=math.max(0,now-(r.tick_at or now));r.tick_at=now
- if r.phase=='running' or r.phase=='settling' then
-  local usable=math.max(0,math.min(now,(r.last_seen or now)+Tank.ANIMATION_GRACE)-(now-dt))
-  r.elapsed=math.min(3.95,r.elapsed+usable)
-  if r.last_seen and now-r.last_seen>Tank.ANIMATION_GRACE then r.phase='uncertain' end
+ if r.phase=='running' and r.stage then
+  local duration=Tank.stages[r.kind][r.stage][2]
+  r.stage_elapsed=math.min(duration*.985,(r.stage_elapsed or 0)+dt)
+  r.elapsed=tank_stage_start(r,r.stage)+r.stage_elapsed
  end
 end
 function Tank.feed_reload(r,v,now)
+ if r.last_sample and now-r.last_sample>.3 then r.stage_observed=false end
  Tank.advance(r,now)
- if r.needs_reconcile then
-  if r.reserve~=nil and v.reserve~=r.reserve then
-   r.phase='idle';r.elapsed=0;r.known_start=false;r.committed=false;r.state=nil
+ local prior_current,prior_reserve=r.current,r.reserve
+ if v.current~=nil then r.current=v.current end
+ if v.reserve~=nil then r.reserve=v.reserve end
+ local committed=(prior_reserve~=nil and r.reserve~=nil and r.reserve<prior_reserve and (r.current or 0)>0)
+ if r.kind=='old' and prior_current==0 and r.current==1 and r.phase~='idle' then committed=true end
+ if committed then
+  r.committed=true
+  if r.kind=='old' then
+   r.stage=4;r.stage_elapsed=0;r.elapsed=tank_stage_start(r,4);r.phase='running';r.known_start=true
+  elseif v.state==nil or v.state==0 then
+   r.phase='idle';r.elapsed=0;r.stage=nil;r.checkpoints={}
   end
-  r.needs_reconcile=nil
  end
- local previous_current,previous_reserve=r.current,r.reserve
- local in_cycle=r.phase~='idle'
- local commit=(previous_reserve~=nil and v.reserve<previous_reserve and v.current>0)
-  or (r.kind=='old' and in_cycle and previous_current==0 and v.current==1)
- local was_state=r.state
- r.current,r.reserve,r.state=v.current,v.reserve,v.state
- if v.state==nil then if in_cycle then r.phase='uncertain' end;return end
- r.last_seen=now
- -- ammo remains usable without inventing a reload state
- local running=v.state==4 or v.state==5 or v.state==7
- if commit then
-  if r.kind=='new' or v.state==0 then
-   r.phase='idle';r.elapsed=0;r.known_start=false;r.committed=false;return
-  end
-  -- Old tank commits a round about one second before its final 4 -> 0.
-  r.committed=true;r.phase='settling';r.elapsed=math.max(3,r.elapsed);r.known_start=true
+ local state=v.state
+ if state==nil then return end
+ local previous=r.state;r.state=state;r.last_seen=now
+ if state==0 then
+  r.last_sample=now;r.stage_observed=false
+  -- Old initial-stage interruptions also return 0 while the chamber is empty.
+  if r.kind=='old' and r.phase~='idle' and r.current==0 then
+   r.phase='paused';r.restart_initial=true
+  else r.phase='idle';r.stage=nil;r.elapsed=0;r.checkpoints={};r.committed=false end
+  return
  end
- if running then
-  if r.phase=='idle' then
-   r.elapsed=0;r.committed=false
-   -- Joining an already-running reload has no recoverable exact progress.
-   r.known_start=(was_state==0)
-  elseif r.phase=='paused' or r.phase=='uncertain' then
-   -- Keep an observed same-instance progress, never reset on another R press.
+ local paused=state==1 or state==3
+ local stage=(state==5 or state==1) and 2 or ((state==7 or state==3) and 3 or nil)
+ if state==4 then stage=(r.kind=='old' and (r.current==1 or r.committed)) and 4 or 1 end
+ if not stage then r.phase='paused';return end
+ if paused then
+  if r.stage~=stage or r.phase=='idle' then
+   r.stage=stage;r.stage_elapsed=0;r.elapsed=tank_stage_start(r,stage);r.known_start=false
   end
-  r.phase=r.committed and 'settling' or 'running'
- elseif v.state==1 then
-  r.phase='paused'
- elseif v.state==0 then
-  if r.committed or (in_cycle and v.current>0) then
-   r.phase='idle';r.elapsed=0;r.known_start=false;r.committed=false
-  elseif in_cycle then r.phase='paused' -- old interruption returns state 0, still empty
-  else r.phase='idle';r.elapsed=0 end
- else r.phase='uncertain' end
+  -- Infer checkpoint ONLY from a locally observed stage start and recent samples.
+  local cp=r.kind=='new' and (stage==2 and 1.15 or .30) or nil
+  if cp and r.stage_observed and r.last_sample and now-r.last_sample<=.3 and r.stage_elapsed>=cp+.1 then r.checkpoints[stage]=cp end
+  r.phase='paused';r.last_sample=now;return
+ end
+ if r.stage~=stage or r.phase=='idle' or r.restart_initial then
+  r.stage_elapsed=0;r.stage_observed=(previous~=nil and previous~=state and r.last_sample~=nil and now-r.last_sample<=.3)
+  r.known_start=r.stage_observed or (r.kind=='old' and committed) or false
+ elseif r.phase=='paused' then
+  r.stage_elapsed=r.checkpoints[stage] or 0;r.stage_observed=true;r.known_start=true
+ end
+ r.restart_initial=nil;r.stage=stage;r.phase='running'
+ r.elapsed=tank_stage_start(r,stage)+r.stage_elapsed;r.last_sample=now;r.needs_reconcile=nil
 end
 function Tank.detach()
  local a=Tank.active;if not a then return end
  Tank.advance(a.reload,M.clock)
  if a.reload.phase~='idle' then
   local r=tank_copy(a.reload)
-  if a.last_role~=1 and r.phase~='paused' then r.known_start=false;r.elapsed=0 end
+  r.stage_observed=false -- Detached history cannot establish an unobserved checkpoint.
   r.phase='paused';r.tick_at=M.clock;r.needs_reconcile=true
   Tank.history_serial=Tank.history_serial+1
   Tank.history[a.key]={reload=r,at=M.clock,serial=Tank.history_serial,ref_key=a.ref_key}
@@ -1800,8 +1871,9 @@ function Tank.ensure(kind)
   end
   Tank.history[key]=nil
   Tank.active={key=key,kind=kind,reload=r,refs={},ref_key='',children={},next_hull=0,next_weapon=M.clock+.04,
-   cursor=1,phase=0,next_old=0,next_log=0,saved_ref_key=saved and saved.ref_key}
-  log('TANK_VARIANT hull='..tostring(M.hull)..' variant='..kind..' telemetry=bounded_batch')
+   next_gatling=M.clock+.04,next_rack_a=M.clock+.04,next_rack_b=M.clock+.04,
+   cursor=1,phase=0,next_old=0,next_log=M.clock+5,diag={},saved_ref_key=saved and saved.ref_key}
+  log('TANK_VARIANT hull='..tostring(M.hull)..' variant='..kind..' telemetry=cache_candidate_plus_bounded_batch')
  end
  local a=Tank.active;local role=FRV.last_relation and FRV.last_relation.role
  if a.last_role==1 and role~=nil and role~=1 and a.reload.phase~='idle' then
@@ -1857,71 +1929,87 @@ function Tank.set_refs(a,hf)
  end
  return true
 end
-function Tank.accept(a,id,f,now)
+function Tank.bind_shape(a,id,shape)
+ if shape~='gatling' and shape~='rack' then return false end
  local c=a.children[id]
- local n=dense_count(f)
- if c and (not n or (c.shape=='gatling' and n<28) or (c.shape=='rack' and n<33)) then return end
- local shape=Tank.shape(f)
- if not shape then return end
  if c and c.shape~=shape then
-  -- Wrong-shaped reused child: discard only this channel, not HP or all weapons.
   a.children[id]=nil;if a.gatling==id then a.gatling=nil;a.reload=Tank.new_reload('new') end
-  local racks={};for _,v in ipairs(a.racks or {}) do if v~=id then racks[#racks+1]=v end end;a.racks=racks
-  return
+  local keep={};for _,v in ipairs(a.racks or {})do if v~=id then keep[#keep+1]=v end end;a.racks=keep;c=nil
  end
  if not c then c={shape=shape};a.children[id]=c end
  if shape=='gatling' then
-  if a.gatling and a.gatling~=id then a.ambiguous=true;return end
-  a.gatling=id
- elseif shape=='rack' then
-  local found=false;for _,v in ipairs(a.racks or {}) do if v==id then found=true end end
-  if not found then a.racks=a.racks or {};a.racks[#a.racks+1]=id;table.sort(a.racks) end
-  if #a.racks>2 then a.ambiguous=true;return end
- else return end
- local value=Tank.decode(shape,f)
- if value then
-  c.value=value;c.at=now
-  if shape=='gatling' then Tank.feed_reload(a.reload,value,now) end
+  if a.gatling and a.gatling~=id then a.ambiguous=true;return false end;a.gatling=id
+ else
+  local found=false;for _,v in ipairs(a.racks or {})do if v==id then found=true end end
+  if not found then a.racks=a.racks or {};a.racks[#a.racks+1]=id;table.sort(a.racks)end
+  if #a.racks>2 then a.ambiguous=true;return false end
+ end
+ return true
+end
+function Tank.accept(a,id,f,now)
+ local shape=Tank.shape(f)
+ if not Tank.bind_shape(a,id,shape) then return end
+ local c=a.children[id];local value=Tank.decode(shape,f)
+ if value then c.value=value;c.at=now;if shape=='gatling' then Tank.feed_reload(a.reload,value,now) end end
+end
+local function tank_diag_hit(a,name,ok,value)
+ local d=a.diag[name] or {attempts=0,valid=0,gaps=0};a.diag[name]=d
+ d.attempts=d.attempts+1
+ if ok then d.valid=d.valid+1;d.last=value;d.last_at=M.clock else d.gaps=d.gaps+1 end
+end
+local function tank_diag_state(a,name,state)
+ local k='state_'..name
+ if a[k]~=state then
+  log('TANK_TELEM_STATE channel='..name..' hull='..tostring(M.hull)..' role='..tostring(a.last_role)..' old='..tostring(a[k])..' new='..tostring(state))
+  a[k]=state
+ end
+end
+local function tank_diag_log(a)
+ if M.clock<(a.next_log or 0) then return end
+ a.next_log=M.clock+5
+ local function part(name)
+  local d=a.diag[name] or {attempts=0,valid=0,gaps=0}
+  local age=d.last_at and string.format('%.2f',M.clock-d.last_at) or 'nil'
+  local out=name..'='..d.valid..'/'..d.attempts..' gaps='..d.gaps..' changes='..(d.changes or 0)..' age='..age..' last='..tostring(d.last)
+  d.attempts,d.valid,d.gaps,d.changes=0,0,0,0
+  return out
+ end
+ if a.kind=='new' then
+  log('TANK_NEW_READ hull='..tostring(M.hull)..' role='..tostring(a.last_role)..' '..part('gatling')..' '..part('rack_a')..' '..part('rack_b'))
+ else
+  log('TANK_OLD_RELOAD_READ hull='..tostring(M.hull)..' role='..tostring(a.last_role)..' '..part('old_reload'))
  end
 end
 function Tank.refresh_new(session)
  local a=Tank.ensure('new');local now=M.clock;local hid=M.hull
- if not valid_goid(session,hid) then Tank.detach();FRV.drop_tank();return end
+ if call(GS.game_object_exists,session,hid)==false then Tank.detach();FRV.drop_tank();return end
  local c=cache_for(hid)
  if now>=a.next_hull then
   a.next_hull=now+.2
   local hf=sample(session,hid)
   if hull_sig(hf) then
    c.hp,c.max,c.hull_valid_at=hf[30],hf[15],now
-   if Tank.set_refs(a,hf)==false then
-    -- Explicit malformed/changed references revoke old weapon samples immediately.
-    a.refs={};a.children={};a.racks={};a.gatling=nil;a.ref_key='';a.reload=Tank.new_reload('new')
-   end
+   Tank.set_refs(a,hf) -- Malformed/partial children are gaps; valid replacements reset channels.
   end
  end
- if now-(c.hull_valid_at or c.bound_at or now)>3 then FRV.drop_tank();return end
- if now>=a.next_weapon and #a.refs>0 and now-(a.refs_at or -100)<=.6 then
-  a.next_weapon=now+.1 -- ONE combined weapon query per 100 ms; no catch-up loops.
-  local id
-  local complete=a.gatling and a.racks and #a.racks==2 and not a.ambiguous
-  if complete then
-   a.phase=a.phase%4+1
-   id=(a.phase==1 or a.phase==3) and a.gatling or a.racks[a.phase==2 and 1 or 2]
-  else
-   -- At most five explicit current-Hull children, not a spatial/GOID/world scan.
-   id=a.refs[a.cursor];a.cursor=a.cursor%#a.refs+1
+
+ if #a.refs>0 then
+  -- Each identified weapon advances independently. An unreadable rack cannot
+  -- prevent Gatling or the other rack from being sampled.
+  if a.gatling and now>=a.next_gatling then
+   Tank.sample_child(session,a,a.gatling,'gatling',now)
+   local c=a.children[a.gatling];a.next_gatling=now+(c and c.cache_live and .1 or .05)
   end
-  if id then
-   local exists=call(GS.game_object_exists,session,id)
-   if exists==true then
-    local f=sample(session,id);if f then Tank.accept(a,id,f,now) end
-   elseif exists==false then
-    a.children[id]=nil
-    if a.gatling==id then a.gatling=nil;a.reload=Tank.new_reload('new') end
-    local racks={};for _,v in ipairs(a.racks or {}) do if v~=id then racks[#racks+1]=v end end;a.racks=racks
-   end
+  if a.racks and a.racks[1] and now>=a.next_rack_a then a.next_rack_a=now+.2;Tank.sample_child(session,a,a.racks[1],'rack_a',now) end
+  if a.racks and a.racks[2] and now>=a.next_rack_b then a.next_rack_b=now+.2;Tank.sample_child(session,a,a.racks[2],'rack_b',now) end
+  if now>=a.next_weapon then
+   a.next_weapon=now+.1
+   local id=a.refs[a.cursor];a.cursor=a.cursor%#a.refs+1
+   local c=id and a.children[id]
+   if id and not (c and (c.shape=='gatling' or c.shape=='rack')) then Tank.discover_child(session,a,id,now) end
   end
  end
+ tank_diag_log(a)
  Tank.advance(a.reload,now)
  M.hp,M.max=c.hp,c.max
  -- Never pass new rack objects into the old main/coax readers.
@@ -1931,21 +2019,359 @@ function Tank.refresh_old(session)
  if not M.hull then Tank.detach();return end
  local a=Tank.ensure('old');local c=M.cache[M.hull];if not c then return end
  local id=c.main_id
- if a.old_id and a.old_id~=id then a.reload=Tank.new_reload('old') end
+ if a.old_id and a.old_id~=id then a.reload=Tank.new_reload('old');a.old_schema=nil end
  a.old_id=id
  if M.clock>=a.next_old then
-  a.next_old=M.clock+.2
+  a.next_old=M.clock+.1
+  local v,source
   if valid_goid(session,id) and call(GS.game_object_is_type,session,id,MAIN_BIND_TYPE)==true then
-   local f=sample(session,id);local v=Tank.decode('old',f)
-   if v then Tank.feed_reload(a.reload,v,M.clock) end
-  end
+   if not a.old_schema and M.clock>=(a.schema_retry or 0) then
+    a.schema_retry=M.clock+5
+    local info=call(Net.object_info,MAIN_BIND_TYPE);local fs=type(info)=='table' and info.fields
+    a.old_schema=type(fs)=='table' and #fs==27 and hash_of_field(fs[14])=='cd889dbc'
+     and hash_of_field(fs[5])=='ec64918b' and hash_of_field(fs[6])=='d7a5d63e' or nil
+   end
+   if a.old_schema then
+    local state=call(GS.game_object_field,session,id,'L8h7VinJ')
+    if integer(state,7) then v={current=c.main_current,reserve=c.main_reserve,state=state};source='targeted' end
+   end
+   if not v then v=Tank.decode('old',sample(session,id));source='batch' end
+   tank_diag_hit(a,'old_reload',v~=nil,v and ('state='..tostring(v.state)..',source='..source))
+   if v then tank_diag_state(a,'old_reload',v.state);Tank.feed_reload(a.reload,v,M.clock) end
+  else tank_diag_hit(a,'old_reload',false,'invalid') end
  end
- Tank.advance(a.reload,M.clock)
+ tank_diag_log(a);Tank.advance(a.reload,M.clock)
 end
+-- The old ammo path remains intact. Only the stale-display policy changes in build.py.
 local tank_legacy_refresh=refresh_bound
 refresh_bound=function(session,owned_set)
  if Tank.is_new() then Tank.refresh_new(session)
  else tank_legacy_refresh(session,owned_set);Tank.refresh_old(session) end
+end
+
+-- Bounded cache evaluation tied to the already bound child. Paired observations
+-- choose a channel; a later disagreement revokes it without hiding the HUD.
+function Tank.cache_candidates(kind,n)
+ local out={};local m=n and n.magazine;local r=n and n.rounds
+ if kind=='gatling' then
+  if m and integer(m.reserve,6) and integer(m.current,300) then out.magazine={reserve=m.reserve,current=m.current} end
+ else
+  if m then
+   if integer(m.current,10) then out.magazine_current={ammo=m.current} end
+   if integer(m.reserve,10) then out.magazine_reserve={ammo=m.reserve} end
+  end
+  if r then
+   if integer(r.reserve,10) then out.rounds_reserve={ammo=r.reserve} end
+   if integer(r.rounds_0,10) then out.rounds_0={ammo=r.rounds_0} end
+   if integer(r.rounds_1,10) then out.rounds_1={ammo=r.rounds_1} end
+  end
+ end
+ return out
+end
+local function equivalent(a,b,kind)
+ return a and b and (kind=='gatling' and a.current==b.current and a.reserve==b.reserve or kind=='rack' and a.ammo==b.ammo)
+end
+function Tank.cache_pair(c,kind,n,v)
+ if c.cache_rejected then return end
+ local choices=Tank.cache_candidates(kind,n)
+ if c.cache_model and not equivalent(choices[c.cache_model],v,kind) then
+  log('TANK_CACHE_REVOKED reason=batch_disagreement model='..c.cache_model)
+  c.cache_model=nil;c.cache_live=false;c.cache_rejected=true;c.state_cache_ok=false;return
+ end
+ local remaining={};local count,name=0,nil
+ for k,x in pairs(choices) do
+  if equivalent(x,v,kind) and (not c.cache_choices or c.cache_choices[k]) then remaining[k]=true;count=count+1;name=k end
+ end
+ c.cache_choices=remaining;c.cache_pairs=(c.cache_pairs or 0)+1
+ if count==1 and c.cache_pairs>=2 and not c.cache_model then c.cache_model=name;log('TANK_CACHE_BOUND model='..name..' paired='..c.cache_pairs) end
+ if kind=='gatling' and v.state~=nil and n.state~=nil then
+  -- These are separate reads of independently updated stores. Once the field
+  -- mapping is validated, a transition mismatch cannot invalidate that mapping.
+  -- The native reader still validates owner identity, component and state range.
+  if n.state~=v.state then
+   c.state_pairs=0
+   if not c.state_disagreement then log('TANK_RELOAD_PAIR_GAP native='..n.state..' batch='..v.state..' validated='..tostring(c.state_cache_ok==true)) end
+   c.state_disagreement=true
+  else
+   c.state_disagreement=nil;c.state_pairs=(c.state_pairs or 0)+1
+   if c.state_pairs>=2 then c.state_cache_ok=true end
+  end
+ end
+end
+function Tank.sample_child(session,a,id,name,now)
+ if not id then return end
+ local c=a.children[id];if not c then return end
+ local exists=call(GS.game_object_exists,session,id)
+ if exists==false then
+  a.children[id]=nil;if a.gatling==id then a.gatling=nil;a.reload=Tank.new_reload('new') end
+  local racks={};for _,v in ipairs(a.racks or {}) do if v~=id then racks[#racks+1]=v end end;a.racks=racks
+  log('TANK_CHANNEL_LOST channel='..name..' goid='..id);return
+ end
+ -- An unavailable Lua exists() result does not block an independently validated native read.
+ if C.weapon_cache==false then c.cache_live=false end
+ local n,why,native_attempt
+ if C.weapon_cache~=false and (not c.cache_rejected or C.debug) and now>=(c.next_cache or 0) then
+  native_attempt=true;c.next_cache=now+(c.cache_rejected and 1 or .1)
+  n,why=Native.weapon(id,c.native_descriptor)
+  if n then c.native_descriptor=n.descriptor end
+  c.cache_live=not c.cache_rejected and n~=nil and c.cache_model~=nil and Tank.cache_candidates(c.shape,n)[c.cache_model]~=nil
+  if why and (c.cache_error~=why or now>=(c.cache_log_at or 0)) then
+   log('TANK_CACHE_GAP channel='..name..' reason='..tostring(why));c.cache_error=why;c.cache_log_at=now+10
+  end
+ end
+ local v,source,f,reason,batch_attempt
+ if C.weapon_cache==false or not c.cache_live or now>=(c.next_compare or 0) then
+  c.next_compare=now+1
+  batch_attempt=true;f,reason=sample(session,id)
+  v=Tank.shape(f)==c.shape and Tank.decode(c.shape,f) or nil
+  if v then
+   -- Select one source before feeding the reload machine. Feeding the batch
+   -- here could reset an active native reload with a delayed idle value.
+   source='batch'
+   if n then Tank.cache_pair(c,c.shape,n,v);Tank.learn_profile(c,n) end
+  end
+ end
+ if n and c.cache_model and not c.cache_rejected then
+  local x=Tank.cache_candidates(c.shape,n)[c.cache_model]
+  if x then
+   local batch_state=v and v.state
+   v=x;source='component_cache';c.cache_live=true
+   if c.shape=='gatling' then
+    local p=Tank.profile_for(n)
+    if p and p.shape==c.shape and p.model==c.cache_model and p.state_ok then c.state_cache_ok=true end
+    if c.state_cache_ok and n.state~=nil then v.state=n.state
+    else v.state=batch_state end
+   end
+  end
+ end
+ Tank.observe(a,id,exists,f,reason,n,why,batch_attempt,native_attempt)
+ local d=a.diag[name] or {attempts=0,valid=0,gaps=0};a.diag[name]=d
+ d.attempts=d.attempts+1
+ if v then
+  local value_key=v.ammo and tostring(v.ammo) or (tostring(v.current)..'/'..tostring(v.reserve))
+  if d.value_key and d.value_key~=value_key then d.changes=(d.changes or 0)+1 end;d.value_key=value_key
+  d.valid=d.valid+1;d.last_at=now;d.last=source..':'..(v.ammo and ('ammo='..v.ammo) or ('cur='..v.current..',res='..v.reserve..',state='..tostring(v.state)))
+  c.value=v;c.at=now
+  if c.shape=='gatling' then
+   Tank.feed_reload(a.reload,v,now)
+   if v.state~=nil and a.last_reload_log~=v.state then
+    log('TANK_TELEM_STATE channel=gatling role='..tostring(a.last_role)..' new='..v.state..' source='..source);a.last_reload_log=v.state
+   end
+  end
+ else d.gaps=d.gaps+1 end
+end
+
+-- Cold-discovery observations are independent of successful batch classification.
+-- Exactly the five Hull references; no ownership edits, scans, RPCs or game writes.
+Tank.resource_profiles={}
+local function profiles()
+ if Tank.profile_session~=M.session then Tank.profile_session=M.session;Tank.resource_profiles={} end
+ return Tank.resource_profiles
+end
+local function resource(n)
+ local r=n and n.descriptor and n.descriptor.resource
+ return type(r)=='string' and #r==16 and r:match('^%x+$') and r or nil
+end
+function Tank.profile_for(n)
+ local p=profiles()[resource(n) or ''];return p and not p.conflict and p or nil
+end
+function Tank.learn_profile(c,n)
+ local r=resource(n);if not r or not c.cache_model or c.cache_rejected then return end
+ local all=profiles();local p=all[r]
+ if p and (p.shape~=c.shape or p.model~=c.cache_model) then
+  p.conflict=true;return
+ end
+ if p and c.state_cache_ok then p.state_ok=true end
+ if not p then
+  local count=0;for _ in pairs(all)do count=count+1 end;if count>=16 then return end
+  all[r]={shape=c.shape,model=c.cache_model,state_ok=c.state_cache_ok==true};log('TANK_RESOURCE_LEARNED resource='..r..' shape='..c.shape..' model='..c.cache_model)
+ end
+end
+local function scalar(x)
+ if x==nil then return 'nil' end
+ if type(x)=='number' or type(x)=='boolean' then return tostring(x) end
+ if type(x)=='table' then return 'table' end
+ if type(x)=='string' then return 'str:'..x:gsub('[%s=,;]','_'):sub(1,32) end
+ return type(x)
+end
+local function batch_key(f)
+ if type(f)~='table' then return 'nil' end
+ local out={};for i=1,33 do out[#out+1]=i..':'..scalar(f[i]) end;return table.concat(out,',')
+end
+local function native_ammo(n)
+ if not n or (not n.magazine and not n.rounds) then return 'nil' end
+ local m,r=n.magazine or {},n.rounds or {}
+ return table.concat({scalar(m.reserve),scalar(m.current),scalar(r.reserve),scalar(r.rounds_0),scalar(r.rounds_1)},'/')
+end
+local function batch_ammo(f,shape)
+ local v=Tank.decode(shape,f);if not v then return 'nil' end
+ return v.ammo and ('rack:'..v.ammo) or (tostring(v.reserve)..'/'..tostring(v.current))
+end
+function Tank.observe(a,id,exists,f,reason,n,why,batch_attempt,native_attempt)
+ a.observed=a.observed or {};local q=a.observed[id] or {};a.observed[id]=q;local now=M.clock
+ q.exists=exists;q.role=a.last_role
+ if batch_attempt then
+  q.batch_attempts=(q.batch_attempts or 0)+1;q.batch_at=now;q.batch_count=dense_count(f);q.batch=nil
+  if type(f)=='table' then q.batch_success_at=now;q.batch={};for i=1,33 do q.batch[i]=f[i] end end;q.batch_reason=reason
+  q.batch_shape=Tank.shape(f);local key=batch_ammo(f,q.batch_shape)
+  if key~='nil' then
+   if q.batch_value and q.batch_value~=key then q.batch_change_at=now;q.batch_changes=(q.batch_changes or 0)+1 end
+   q.batch_value=key
+  end
+ end
+ if native_attempt then
+  q.native_attempts=(q.native_attempts or 0)+1;q.native_at=now;q.native=n;q.native_reason=why
+  if n then q.native_success_at=now end
+  local key=native_ammo(n)
+  if key~='nil' then
+   if q.native_value and q.native_value~=key then q.native_change_at=now;q.native_changes=(q.native_changes or 0)+1 end
+   q.native_value=key
+  end
+ end
+ if not C.debug or now<(q.next_log or 0) then return end;q.next_log=now+1
+ local d=q.native and q.native.descriptor or {};local m=q.native and q.native.magazine or {};local r=q.native and q.native.rounds or {}
+ local c=a.children[id] or {};local bind=(a.gatling and 'gatling' or '-')..'/'..#(a.racks or {})
+ local function age(at)return at and string.format('%.2f',now-at) or 'never' end
+ local fingerprint=table.concat({scalar(q.exists),scalar(q.role),scalar(q.batch_shape),scalar(q.batch_reason),batch_key(q.batch),
+  native_ammo(q.native),scalar(q.native and q.native.state),scalar(d.flags),scalar(q.native_reason),scalar(c.cache_model),scalar(c.shape)},'|')
+ if q.last_log==fingerprint and now<(q.heartbeat or 0) then return end
+ q.last_log=fingerprint;q.heartbeat=now+5
+ local utc=call(os.date,'!%Y-%m-%dT%H:%M:%SZ') or 'unavailable'
+ log('TANK_OBSERVE utc='..utc..' t='..string.format('%.3f',now)..' avatar='..tostring(M.avatar)..' hull='..tostring(M.hull)..' role='..tostring(a.last_role)..' id='..id..
+  ' bind='..bind..' exists='..scalar(q.exists)..' batch='..scalar(q.batch_reason)..' count='..scalar(q.batch_count)..' shape='..scalar(q.batch_shape)..
+  ' batch_attempts='..(q.batch_attempts or 0)..' batch_attempt_age='..age(q.batch_at)..' batch_read_age='..age(q.batch_success_at)..' batch_change_age='..age(q.batch_change_at)..' batch_changes='..(q.batch_changes or 0)..
+  ' native='..(q.native and 'ok' or scalar(q.native_reason))..' native_attempts='..(q.native_attempts or 0)..' native_attempt_age='..age(q.native_at)..' native_read_age='..age(q.native_success_at)..
+  ' native_change_age='..age(q.native_change_at)..' native_changes='..(q.native_changes or 0)..' resource='..scalar(d.resource)..' entity='..scalar(d.entity)..
+  ' unit='..scalar(d.unit)..' flags='..scalar(d.flags)..' magazine='..scalar(m.reserve)..'/'..scalar(m.current)..' rounds='..scalar(r.reserve)..'/'..scalar(r.rounds_0)..'/'..scalar(r.rounds_1)..
+  ' state='..scalar(q.native and q.native.state)..' model='..scalar(c.cache_model)..' current_shape='..scalar(c.shape)..' fields='..batch_key(q.batch))
+end
+function Tank.sync_uncertain(a,id)
+ if not a then return false end
+ local c=a.children[id];if c and c.cache_rejected then return true end
+ if a.last_role==1 then return false end
+ local q=a.observed and a.observed[id]
+ local changed=q and math.max(q.native_change_at or -1e9,q.batch_change_at or -1e9) or -1e9
+ return M.clock-changed>3 -- No recent change is uncertainty, not proof of stale data.
+end
+function Tank.discover_child(session,a,id,now)
+ a.observed=a.observed or {};local q=a.observed[id] or {};a.observed[id]=q
+ if now<(q.next_discovery or 0) then return end
+ local exists=call(GS.game_object_exists,session,id)
+ local f,reason=sample(session,id);local shape=Tank.shape(f)
+ -- Read native even when Lua reports absent/nil or batch classification fails.
+ -- Contradictory exists=false is logged, never used to bind a HUD channel.
+ local n,why,native_attempt
+ if C.weapon_cache~=false then n,why=Native.weapon(id);native_attempt=true
+ else q.native=nil;q.native_reason='disabled' end
+ Tank.observe(a,id,exists,f,reason,n,why,true,native_attempt)
+ local count=dense_count(f)
+ q.next_discovery=now+((shape=='other' and count~=28 and count~=33) and 5 or .45)
+ if exists==false then return end
+ if shape=='gatling' or shape=='rack' then
+  Tank.accept(a,id,f,now)
+  local c=a.children[id]
+  if c and n then
+   c.native_descriptor=n.descriptor;Tank.cache_pair(c,c.shape,n,Tank.decode(c.shape,f) or {})
+   Tank.learn_profile(c,n)
+  end
+ else
+  local p=Tank.profile_for(n)
+  if p and Tank.bind_shape(a,id,p.shape) then
+   local c=a.children[id];c.native_descriptor=n.descriptor;c.cache_model=p.model;c.state_cache_ok=p.state_ok
+   -- Mapping evidence is reusable. Ammo/reload state is always read afresh.
+   local v=Tank.cache_candidates(c.shape,n)[c.cache_model]
+   if v then c.value=v;c.at=now;c.cache_live=true end
+   log('TANK_NATIVE_DISCOVERY hull='..M.hull..' id='..id..' resource='..n.descriptor.resource..' shape='..c.shape..' source=session_resource_profile')
+  end
+ end
+end
+
+-- Unified data dictionary. No eval/loadstring, shell, external executable or writes
+-- to game state. Existing CFG/FRV position settings are imported on first creation.
+local HudConfig={next_read=0,revision=0}
+HudConfig.schema={
+ tank_offset_y={45,500},tank_scale={.5,2},frv_x={0,1},frv_y={0,1},frv_scale={.5,2},
+ alpha={.1,1},font={new=true,old=true},reload_ring={boolean=true},reticle={boolean=true},
+ weapon_cache={boolean=true},debug={boolean=true},perf={boolean=true}
+}
+function HudConfig.current()
+ return {tank_offset_y=C.offset_y,tank_scale=C.scale,frv_x=Position.x,frv_y=Position.y,frv_scale=Position.scale,
+  alpha=C.alpha,font=C.geometry_numbers and 'new' or 'old',reload_ring=C.reload_ring~=false,reticle=C.reticle~=false,
+  weapon_cache=C.weapon_cache~=false,debug=C.debug,perf=C.perf}
+end
+function HudConfig.parse(s)
+ if type(s)~='string' or #s>8192 then return nil,'file exceeds 8 KiB' end
+ s=s:gsub('^\239\187\191','')
+ if s:sub(1,2)=='\255\254' or s:sub(1,2)=='\254\255' then
+  local le=s:sub(1,2)=='\255\254';if #s%2~=0 then return nil,'invalid UTF-16' end
+  local out={};for i=3,#s,2 do local a,b=s:byte(i,i+1);local n=le and (a+b*256) or (b+a*256);out[#out+1]=n<128 and string.char(n) or '?' end;s=table.concat(out)
+ end
+ if s:find('\0',1,true) then return nil,'invalid encoding' end
+ local out={}
+ for line in (s..'\n'):gmatch('(.-)\n') do
+  line=line:gsub('[#;].*$',''):match('^%s*(.-)%s*$')
+  if line~='' then
+   local k,v=line:match('^([a-z_]+)%s*=%s*([%w%.%-]+)$');local spec=k and HudConfig.schema[k]
+   if not spec or out[k]~=nil then return nil,'unknown/duplicate setting '..tostring(k) end
+   if spec.boolean then
+    if v~='true' and v~='false' then return nil,'expected true/false for '..k end;out[k]=v=='true'
+   elseif spec[1] then
+    if not (v:match('^%d+$') or v:match('^%d+%.%d+$')) then return nil,'invalid decimal '..k end
+    local n=tonumber(v);if not n or n~=n or n<spec[1] or n>spec[2] then return nil,'out of range '..k end;out[k]=n
+   else if not spec[v] then return nil,'expected new/old for font' end;out[k]=v end
+  end
+ end
+ for k in pairs(HudConfig.schema) do if out[k]==nil then return nil,'missing setting '..k end end
+ return out
+end
+function HudConfig.template(v)
+ local lines={
+ '# DRIVER HUD 1.4.3 - Unified HUD settings / 统一设置',
+ '# Edit in Notepad and save; applies in about 2 seconds / 记事本保存后约两秒生效',
+ '# Invalid edits preserve ALL previous settings / 格式错误保留全部上次设置',
+ '# font = new (default / 默认几何字体) or old (旧版字体)',
+ '# tank_offset_y: 45..500, from bottom at reference resolution / 参考分辨率距底部',
+ '# tank_scale / frv_scale: 0.5..2; alpha: 0.1..1',
+ '# frv_x: left 0 -> right 1; frv_y: top 0 -> bottom 1 / FRV中心归一化位置',
+ '# weapon_cache=false uses bounded batch only / 关闭组件缓存仅保留有限频率批量读取',
+ '# debug writes diagnostics; perf adds 10-second CPU/call summaries',
+ '# 原 driver_hud.cfg / frv_hud_position.txt 仅首次迁入；以后修改本文件', ''}
+ for _,k in ipairs({'tank_offset_y','tank_scale','frv_x','frv_y','frv_scale','alpha','font','reload_ring','reticle','weapon_cache','debug','perf'}) do lines[#lines+1]=k..' = '..tostring(v[k]) end
+ return table.concat(lines,'\r\n')..'\r\n'
+end
+function HudConfig.apply(v)
+ local prev=HudConfig.current();local changed=false
+ for k,x in pairs(v) do if prev[k]~=x then changed=true end end
+ if not changed then return end
+ C.offset_y,C.scale,C.alpha=v.tank_offset_y,v.tank_scale,v.alpha
+ C.geometry_numbers=v.font=='new';C.reload_ring,C.reticle,C.weapon_cache=v.reload_ring,v.reticle,v.weapon_cache
+ C.debug,C.perf=v.debug,v.perf;Native.perf=C.perf
+ Position.x,Position.y,Position.scale=v.frv_x,v.frv_y,v.frv_scale
+ Position.revision=Position.revision+1;HudConfig.revision=HudConfig.revision+1;M.draw_key=nil
+ if Tank then Tank.ring_key=nil end
+ log('HUD_CONFIG applied revision='..HudConfig.revision..' font='..v.font)
+end
+function HudConfig.reload(now)
+ if now<HudConfig.next_read then return end;HudConfig.next_read=now+2
+ if not dir or not io or not io.open then return end
+ local path=dir..'/Arrowhead/Helldivers2/driver_hud_settings.txt'
+ local ok,f,err,code=pcall(io.open,path,'rb');if not ok then return end
+ if not f then
+  if code~=2 and not (err==nil and code==nil) then return end
+  if not HudConfig.imported then Position.reload(now);HudConfig.imported=true end
+  if now<(HudConfig.next_create or 0) then return end;HudConfig.next_create=now+30
+  local check,existing,again_error,again_code=pcall(io.open,path,'rb');if not check then return end
+  if existing then pcall(existing.close,existing);return end
+  if again_code~=2 and not (again_error==nil and again_code==nil) then return end
+  local good,output=pcall(io.open,path,'wb')
+  if good and output then local wrote,result=pcall(output.write,output,HudConfig.template(HudConfig.current()));pcall(output.close,output);if wrote and result then log('HUD_CONFIG created=driver_hud_settings.txt') end end
+  return
+ end
+ HudConfig.imported=true
+ local good,s=pcall(f.read,f,8193);pcall(f.close,f);if not good then return end
+ local value,why=HudConfig.parse(s)
+ if value then HudConfig.error=nil;HudConfig.apply(value)
+ elseif HudConfig.error~=why then log('HUD_CONFIG rejected='..tostring(why)..' keeping_previous=true');HudConfig.error=why end
 end
 
 local material='mods/driver_hud/solid'
@@ -2151,7 +2577,7 @@ local function draw(w,h)
  for i=0,2 do bullet(x+(228+i*5)*s,y+23*s,s*0.7,a) end
  text(M.mg and tostring(M.mg) or '--',x+247*s,y+23*s,18*s,a)
  local ds=math.min(w/1920,h/1080)
- disk(w/2,h/2,3.2*ds,0.10);disk(w/2,h/2,2.5*ds,0.18);disk(w/2,h/2,1.8*ds,0.35);disk(w/2,h/2,1.1*ds,0.5)
+ if C.reticle~=false then disk(w/2,h/2,3.2*ds,0.10);disk(w/2,h/2,2.5*ds,0.18);disk(w/2,h/2,1.8*ds,0.35);disk(w/2,h/2,1.1*ds,0.5) end
  M.draw_key=key
 end
 -- Tank variant presentation: static HUD and a separately cached reload overlay.
@@ -2174,8 +2600,10 @@ function Tank.draw_new(w,h)
  local missiles=not a.ambiguous and ra and rb and ra.value and rb.value and (ra.value.ammo+rb.value.ammo)
  local stale_g=g and M.clock-(gat.at or 0)>Tank.STALE_AFTER or false
  local stale_m=missiles and (M.clock-(ra.at or 0)>Tank.STALE_AFTER or M.clock-(rb.at or 0)>Tank.STALE_AFTER) or false
+ local uncertain_g=g and Tank.sync_uncertain(a,a.gatling) or false
+ local uncertain_m=missiles and (Tank.sync_uncertain(a,a.racks[1]) or Tank.sync_uncertain(a,a.racks[2])) or false
  local key=table.concat({'new_tank',w,h,a.key,tostring(M.hp),tostring(M.max),g and g.current or '?',
-  g and g.reserve or '?',tostring(missiles),tostring(stale_g),tostring(stale_m)},':')
+  g and g.reserve or '?',tostring(missiles),tostring(stale_g),tostring(stale_m),tostring(uncertain_g),tostring(uncertain_m)},':')
  if key==M.draw_key then return end
  clear()
  local s=math.min(w/1920,h/1080)*C.scale;local x=w/2-180*s;local y=C.offset_y*s;local alpha=C.alpha
@@ -2198,22 +2626,22 @@ function Tank.draw_new(w,h)
  end
  if not g then rect(bx+bw/2-3*s,y+25*s,6*s,s,ga*.65) end
  -- A short dotted underline denotes last-known, NOT freshly sampled, telemetry.
- if stale_g then for i=0,7 do rect(bx+i*13*s,y+19*s,4*s,s,alpha*.45) end end
+ if stale_g or uncertain_g then for i=0,7 do rect(bx+i*13*s,y+19*s,4*s,s,alpha*.45) end end
  local ma=alpha*(stale_m and .45 or 1)
  bullet(x+314*s,y+25*s,s,ma);text(missiles and tostring(missiles) or '--',x+329*s,y+23*s,18*s,ma)
- if stale_m then for i=0,2 do rect(x+(329+i*7)*s,y+20*s,3*s,s,alpha*.45) end end
+ if stale_m or uncertain_m then for i=0,2 do rect(x+(329+i*7)*s,y+20*s,3*s,s,alpha*.45) end end
  local ds=math.min(w/1920,h/1080)
- disk(w/2,h/2,3.2*ds,.10);disk(w/2,h/2,2.5*ds,.18);disk(w/2,h/2,1.8*ds,.35);disk(w/2,h/2,1.1*ds,.5)
+ if C.reticle~=false then disk(w/2,h/2,3.2*ds,.10);disk(w/2,h/2,2.5*ds,.18);disk(w/2,h/2,1.8*ds,.35);disk(w/2,h/2,1.1*ds,.5) end
  M.draw_key=key
 end
 function Tank.draw_ring(w,h)
  local a=Tank.active;local r=a and a.reload
- if not r or r.phase=='idle' then Tank.clear_ring();return end
+ if C.reload_ring==false or not r or r.phase=='idle' then Tank.clear_ring();return end
  local suspended=FRV.grace_until~=nil
  -- Rendering may continue in native display-grace, but state must not advance.
  local progress=r.known_start and math.max(0,math.min(.985,r.elapsed/4)) or nil
  local steps=progress and math.floor(progress*48+.0001) or -1
- local key=table.concat({a.key,w,h,steps,r.phase,tostring(suspended),tostring(M.gui)},':')
+ local key=table.concat({a.key,w,h,steps,r.phase,tostring(r.telemetry_stale),tostring(suspended),tostring(M.gui)},':')
  if key==Tank.ring_key then return end
  Tank.clear_ring()
  local saved=M.ids;M.ids={}
@@ -2224,7 +2652,7 @@ function Tank.draw_ring(w,h)
   -- Keep a visible gap so the ring never crowds the icon or ammo text/bars.
   local cx=w/2+(a.kind=='new' and -25 or 14)*s;local cy=(C.offset_y+31)*s
   local radius=(a.kind=='new' and 8.5 or 8.0)*s
-  local alpha=C.alpha*((r.phase=='paused' or r.phase=='uncertain' or suspended) and .5 or .9)
+  local alpha=C.alpha*.9 -- Constant brightness through pauses and telemetry gaps.
   for i=0,47 do
    local from=math.pi*.5-i*math.pi/24;local to=math.pi*.5-(i+.86)*math.pi/24
    local bright=steps>=0 and i<steps
@@ -2248,11 +2676,40 @@ function Tank.draw(w,h)
  end
 end
 
+-- One dictionary dispatches supported HUDs. A failed redraw restores the last
+-- complete static HUD; telemetry exceptions do not reset vehicle identity.
+local HudViews={FRV=function(...)return FRV.draw(...)end,TANK=function(...)return Tank.draw(...)end}
+local real_clear=clear
+clear=function()
+ local tx=M.render_transaction
+ if not tx then return real_clear() end
+ if not tx.cleared then
+  tx.cleared=true;M.ids={};M.draw_key=nil
+  if Tank then Tank.clear_ring() end
+ end
+end
+local function render_view(mode,w,h)
+ if M.clock<(M.next_draw_retry or 0) then return end
+ local tx={ids=M.ids,key=M.draw_key};M.render_transaction=tx
+ local ok,err=pcall(HudViews[mode],w,h);M.render_transaction=nil
+ if tx.cleared then
+  if ok then
+   for _,p in ipairs(tx.ids) do call(Gui[p[1]],M.gui,p[2]) end
+  else
+   for _,p in ipairs(M.ids) do call(Gui[p[1]],M.gui,p[2]) end
+   M.ids=tx.ids;M.draw_key=tx.key
+  end
+ end
+ if not ok then M.next_draw_retry=M.clock+.25 else M.next_draw_retry=nil end
+ if not ok and M.clock>=(M.draw_error_at or 0) then
+  log('HUD_DRAW_ERROR mode='..mode..' retaining_display=true '..tostring(err));M.draw_error_at=M.clock+10
+ end
+end
 local function update(dt)
  M.frame=M.frame+1
  local step=type(dt)=='number' and dt or 0.016667
  if step~=step then step=0 elseif step<0 then step=0 elseif step>0.25 then step=0.25 end
- M.clock=M.clock+step;Position.reload(M.clock)
+ M.clock=M.clock+step;HudConfig.reload(M.clock)
  local session=call(Net.game_session);local peer=call(Net.peer_id)
  local worlds=call(App.worlds) or {};local world=call(App.main_world)
  if session~=M.session or peer~=M.peer or world~=M.world then
@@ -2267,7 +2724,7 @@ local function update(dt)
  local stable=M.seated and (FRV.mode=='FRV' or FRV.mode=='TANK') and not FRV.grace_until
  if not stable or not cached or M.clock>=cached.until_time then
   local owned=call(GS.objects_owned_by,session,peer)
-  if type(owned)~='table' then M.owned_cache=nil;clear();full_reset();return end
+  if type(owned)~='table' then return end -- Preserve bound display on a transient ownership gap.
   local set,ids={},{}
   for _,id in pairs(owned) do if integer(id,32766) then set[id]=true;ids[#ids+1]=id end end
   cached={set=set,ids=ids,until_time=M.clock+0.2};M.owned_cache=cached
@@ -2275,7 +2732,7 @@ local function update(dt)
  local set,owned_ids=cached.set,cached.ids
  -- Player object 0 is legitimate in captured sessions. Vehicle/Avatar GOIDs keep
  -- the existing stricter checks; do not reuse valid_goid() for the player object.
- if M.player==nil or not set[M.player] or call(GS.game_object_is_type,session,M.player,'un6y1d')~=true then
+ if M.player==nil or not set[M.player] or call(GS.game_object_is_type,session,M.player,'un6y1d')==false then
   M.player=nil
   for id in pairs(set) do
    if call(GS.game_object_is_type,session,id,'un6y1d')==true then
@@ -2284,14 +2741,14 @@ local function update(dt)
    end
   end
  end
- if M.player==nil or call(GS.game_object_exists,session,M.player)~=true then
+ if M.player==nil or call(GS.game_object_exists,session,M.player)==false then
   clear();full_reset();M.avatar=nil;M.avatar_valid_at=nil;return
  end
  local avatar=call(GS.game_object_field,session,M.player,'baegche')
- if avatar==nil and M.avatar and M.clock-(M.avatar_valid_at or -100)<0.5 then avatar=M.avatar
+ if avatar==nil and M.avatar and M.seated then avatar=M.avatar
  elseif avatar~=nil then M.avatar_valid_at=M.clock end
  if avatar~=M.avatar then full_reset();M.avatar=avatar end
- if not valid_goid(session,avatar) then clear();full_reset();return end
+ if not integer(avatar,32766) or avatar==0 or call(GS.game_object_exists,session,avatar)==false then clear();full_reset();return end
  local motion=call(GS.game_object_field,session,avatar,'motion_enabled')
  local rotation=call(GS.game_object_field,session,avatar,'rotation_enabled')
  local where=call(GS.game_object_field,session,avatar,'gls4w9b')
@@ -2300,7 +2757,7 @@ local function update(dt)
  local seated_now=motion==false and rotation==false and where~=30 and state~=2
  local missing=motion==nil or rotation==nil
  if not explicit_exit and missing and M.seated then
-  M.seat_unknown_since=M.seat_unknown_since or M.clock;seated_now=M.clock-M.seat_unknown_since<0.5
+  M.seat_unknown_since=M.seat_unknown_since or M.clock;seated_now=true
  else M.seat_unknown_since=nil end
  if not seated_now then
   local was=M.seated
@@ -2319,7 +2776,7 @@ local function update(dt)
   refresh_bound(session,set)
  elseif mode=='TANK' and not FRV.grace_until then refresh_bound(session,set) end
  local show_frv=mode=='FRV' and FRV.vehicle~=nil
- if not show_frv and (not M.hull or M.hp==nil) then clear();return end
+ if not show_frv and not M.hull then clear();return end
  if not M.gui or not live(worlds,M.gui_world) then
   surface_reset(worlds)
   for _,v in ipairs(worlds) do if v~=world then M.gui_world=v;break end end
@@ -2329,13 +2786,7 @@ local function update(dt)
  if sr.Window and call(sr.Window.show_cursor)==true then clear();return end
  local w,h=call(Gui.resolution)
  if type(w)~='number' or type(h)~='number' or w<=0 or h<=0 then return end
- if show_frv then
-  local ok,err=pcall(FRV.draw,w,h)
-  if not ok then
-   pcall(clear)
-   if M.clock>=(FRV.draw_error_at or 0) then log('FRV_DRAW_ERROR '..tostring(err));FRV.draw_error_at=M.clock+10 end
-  end
- else Tank.draw(w,h) end
+ render_view(show_frv and 'FRV' or 'TANK',w,h)
 end
 local old=rawget(_G,'update');if type(old)~='function' then return {installed=false} end
 rawset(_G,'__DRIVER_HUD_INSTALLED',true)
@@ -2357,7 +2808,7 @@ rawset(_G,'update',function(...)
    end
   end
   if not ok then
-   pcall(clear);pcall(full_reset);retry_at=M.clock+1;log('HUD_RECOVERABLE_ERROR '..tostring(err))
+   retry_at=M.clock+1;log('HUD_RECOVERABLE_ERROR retaining_display=true '..tostring(err))
   end
  else
   -- Keep the retry clock moving without running failed rendering/native work.

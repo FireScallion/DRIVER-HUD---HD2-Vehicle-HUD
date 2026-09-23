@@ -119,16 +119,17 @@ function FRV.clear_identity(reason)
  FRV.invalidate(reason);FRV.drop_tank();FRV.mode='NONE'
 end
 function FRV.can_hold(session,avatar)
+ local function retained(id)return integer(id,32766) and id>0 and call(GS.game_object_exists,session,id)~=false end
  if FRV.relation_session~=session or FRV.relation_avatar~=avatar then return false end
- if not FRV.last_relation or not valid_goid(session,FRV.last_relation.vehicle.goid) then return false end
+ if not FRV.last_relation or not retained(FRV.last_relation.vehicle.goid) then return false end
  if FRV.mode=='FRV' then
-  return FRV.vehicle~=nil and valid_goid(session,FRV.vehicle.goid)
- elseif FRV.mode=='TANK' then return valid_goid(session,M.hull) end
+  return FRV.vehicle~=nil and retained(FRV.vehicle.goid)
+ elseif FRV.mode=='TANK' then return retained(M.hull) end
  return false
 end
 function FRV.poll(session,avatar)
- -- Check expiry every frame, not just at 10 Hz: a stalled poll cannot extend grace.
- if FRV.grace_until and (M.clock>=FRV.grace_until or not FRV.can_hold(session,avatar)) then
+ -- Explicit destruction ends retention even while the native reader is unavailable.
+ if FRV.grace_until and not FRV.can_hold(session,avatar) then
   FRV.clear_identity('native_read_grace_expired')
  end
  if M.clock<FRV.next_poll then return FRV.mode end
@@ -139,8 +140,8 @@ function FRV.poll(session,avatar)
    log('NATIVE_UNAVAILABLE kind='..tostring(kind)..' reason='..tostring(why));FRV.last_error=why;FRV.native_error_at=M.clock+10
   end
   if kind=='TRANSIENT_READ' and FRV.last_relation and FRV.relation_at
-   and M.clock<FRV.relation_at+0.3 and FRV.can_hold(session,avatar) then
-   if not FRV.grace_until then log('NATIVE_READ_GRACE seconds=0.3 mode='..FRV.mode) end
+   and FRV.can_hold(session,avatar) then
+   if not FRV.grace_until then log('NATIVE_READ_GRACE retain_until_identity_result=true mode='..FRV.mode) end
    FRV.grace_until=FRV.relation_at+0.3
    return FRV.mode -- Display only: no Health refresh or alternative vehicle search.
   end

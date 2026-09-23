@@ -1,0 +1,23 @@
+# DRIVER HUD 1.4.3 - Unified HUD settings / 统一设置
+# Edit in Notepad and save; applies in about 2 seconds / 记事本保存后约两秒生效
+# Invalid edits preserve ALL previous settings / 格式错误保留全部上次设置
+# font = new (default / 默认几何字体) or old (旧版字体)
+# tank_offset_y: 45..500, from bottom at reference resolution / 参考分辨率距底部
+# tank_scale / frv_scale: 0.5..2; alpha: 0.1..1
+# frv_x: left 0 -> right 1; frv_y: top 0 -> bottom 1 / FRV中心归一化位置
+# weapon_cache=false uses bounded batch only / 关闭组件缓存仅保留有限频率批量读取
+# debug writes diagnostics; perf adds 10-second CPU/call summaries
+# 原 driver_hud.cfg / frv_hud_position.txt 仅首次迁入；以后修改本文件
+
+tank_offset_y = 155
+tank_scale = 1
+frv_x = 0.714
+frv_y = 0.9
+frv_scale = 1
+alpha = 0.76
+font = new
+reload_ring = true
+reticle = true
+weapon_cache = true
+debug = true
+perf = false

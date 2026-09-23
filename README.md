@@ -2,7 +2,7 @@
 
 A lightweight vehicle-status HUD mod for **Helldivers 2**, built around one simple idea: vehicle crews should be able to read the state of their machine without turning the HUD into another source of noise.
 
-**Current version: 1.4.1**  
+**Current version: 1.4.3**  
 [中文说明](README_中文.md) · [Nexus Mods](https://www.nexusmods.com/helldivers2/mods/16358) · [Latest GitHub Release](https://github.com/FireScallion/DRIVER-HUD---HD2-Vehicle-HUD/releases/latest) · [Changelog](CHANGELOG.md)
 
 DRIVER HUD adds compact status displays for both supported tank variants and the HMG / Supply FRVs. It shows information such as hull health, weapon ammunition, reload state, and tire condition while keeping the presentation close to the visual language of the game.
@@ -63,8 +63,6 @@ Static tank graphics and the animated reload overlay are cached separately, so a
 
 The native FRV reader is version-scoped and guarded. If the expected game layout no longer matches after a Helldivers 2 update, the affected native path is designed to fail closed rather than continue reading arbitrary memory.
 
-See [`docs/PERFORMANCE_说明.txt`](docs/PERFORMANCE_说明.txt) and [`docs/VALIDATION_1.4.1.md`](docs/VALIDATION_1.4.1.md) for implementation and validation notes.
-
 ## Requirement
 
 **Bingus Shared Loader v15 / API 1** is required and must be installed separately.
@@ -79,7 +77,7 @@ If you use Arsenal's **First-Mod Priority** option, use the equivalent reversed 
 
 1. Close the game.
 2. Disable or remove every older DRIVER HUD version, including Resolver / FRV / Tank Probe test builds.
-3. Import `DRIVER_HUD_1.4.1.zip` directly into Arsenal and enable **Core**.
+3. Import `DRIVER_HUD_1.4.3.zip` directly into Arsenal and enable **Core**.
 4. Install and enable **Bingus Shared Loader v15** separately.
 5. Confirm BSL has the correct final effective priority.
 6. Run **Purge**.
@@ -90,33 +88,32 @@ Do **not** enable multiple DRIVER HUD versions or development probes at the same
 
 The same installation ZIP is suitable for the GitHub Release and Nexus Main File.
 
-## FRV HUD position and scale
+## HUD Unified settings
 
-The old CMD / PowerShell graphical configurator is no longer required.
+After starting the game once, use Notepad to open:
 
-Start the game once with DRIVER HUD enabled. The mod creates:
+`%APPDATA%\Arrowhead\Helldivers2\driver_hud_settings.txt`
 
-```text
-%APPDATA%\Arrowhead\Helldivers2\frv_hud_position.txt
-```
+Save to apply in about two seconds. Keep every setting. Invalid, incomplete, duplicate or out-of-range dictionaries retain the entire previous configuration. UTF-8 and BOM-marked UTF-16 are supported.
 
-The file contains English and Chinese instructions. Open it in Notepad and edit:
+| Key | Default | Meaning |
+|---|---:|---|
+| tank_offset_y | 155 | Tank bottom offset at reference resolution, 45–500 |
+| tank_scale | 1 | Tank scale, 0.5–2 |
+| frv_x | 0.714 | FRV center, left 0 to right 1 |
+| frv_y | 0.90 | FRV center, top 0 to bottom 1 |
+| frv_scale | 1 | FRV scale, 0.5–2 |
+| alpha | 0.76 | HUD opacity, 0.1–1 |
+| font | new | `new` geometry digits / `old` original game font |
+| reload_ring | true | Tank reload indicator |
+| reticle | true | Tank center dot |
+| weapon_cache | true | Experimental cross-checked component reads |
+| debug | true | Diagnostic logging |
+| perf | false | Ten-second CPU/native-call summaries |
 
-```ini
-x = 0.714
-y = 0.900
-scale = 1.000
-```
+Existing `driver_hud.cfg` and `frv_hud_position.txt`/`.json` values are imported on first creation, including an existing font preference. Afterwards edit only the unified file. The packaged `.example.txt` is reference material and is not deployed over your settings. There is no external executable or shell configurator. Nexus scanning was not performed.
 
-- `x`: horizontal HUD-center position (`0 = left`, `1 = right`)
-- `y`: vertical HUD-center position (`0 = top`, `1 = bottom`)
-- `scale`: FRV HUD size (`0.5` to `2.0`)
-
-Save the file and the new position is normally picked up in about **two seconds** while the game is running.
-
-The live configuration is stored in AppData, **outside the mod ZIP**. You do not need to extract the Arsenal package, modify the compressed archive, confirm a ZIP update, run Purge / Deploy, or restart the game just to move the FRV HUD.
-
-On first creation, valid values from the old `frv_hud_position.json` are migrated automatically. Once the TXT exists, edit the TXT only. Updating DRIVER HUD does not intentionally overwrite an existing position file.
+The old font uses the original source's `core/performance_hud/debug` resource. Its source identity is verified; the user-provided screenshot is consistent with the legacy path, but final pixel appearance needs an in-game comparison.
 
 ## Other configuration
 
@@ -218,26 +215,6 @@ evidence/                   validation outputs for the source snapshot
 ```
 
 No game DLLs, process dumps, heap snapshots, third-party loaders, font files, or Windows configurator executables are distributed in the repository/release package.
-
-## Development and validation notes
-
-The target runtime is **LuaJIT**. The repository includes focused tests for tank telemetry/UI behavior, FRV integration, robustness, performance contracts, FRV TXT configuration, log rotation, Win32 adapter behavior, capture replay, and package structure.
-
-Automated regression tests are useful for preventing known failures, but they are not a substitute for every possible live multiplayer combination or a real in-game FPS benchmark. See [`docs/VALIDATION_1.4.1.md`](docs/VALIDATION_1.4.1.md) for the exact validation scope of this source snapshot.
-
-A Helldivers 2 update can require a DRIVER HUD compatibility update even when the UI itself has not changed.
-
-## Version 1.4.1
-
-1.4.1 formalizes the live-tested 1.4.0-HF1 code path:
-
-- restores tank HUD deployment after the stale Arsenal identity issue encountered during the first 1.4.0 test
-- keeps the new Gatling / missile tank HUD introduced in 1.4.0
-- keeps reload indicators to the **left** of the reloadable weapon icon on both tank variants
-- keeps external bilingual FRV TXT configuration
-- keeps the 1.3.5 native compatibility guards, wheel-fault isolation, and geometry-number rendering path
-
-For the complete history, see [`CHANGELOG.md`](CHANGELOG.md).
 
 ## Open source and credits
 

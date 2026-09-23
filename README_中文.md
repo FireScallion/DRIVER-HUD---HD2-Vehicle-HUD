@@ -2,7 +2,7 @@
 
 一个面向 **《绝地潜兵 2 / Helldivers 2》** 的轻量级载具状态 HUD Mod。它的目标很简单：让载具乘员能及时看清车辆状态，同时不把 HUD 本身变成另一种信息噪音。
 
-**当前版本：1.4.1**  
+**当前版本：1.4.3**  
 [English README](README.md) · [Nexus Mods](https://www.nexusmods.com/helldivers2/mods/16358) · [GitHub 最新 Release](https://github.com/FireScallion/DRIVER-HUD---HD2-Vehicle-HUD/releases/latest) · [更新日志](CHANGELOG.md)
 
 DRIVER HUD 目前为两种坦克，以及机枪 FRV / 补给 FRV 提供紧凑的载具状态显示，包括车体生命值、武器弹药、装填状态和轮胎状态等信息，并尽量保持接近游戏原本的视觉语言。
@@ -65,7 +65,7 @@ FRV 的 native reader 使用版本限定的内部结构并带有兼容性检查�
 实现与验证说明见：
 
 - [`docs/PERFORMANCE_说明.txt`](docs/PERFORMANCE_说明.txt)
-- [`docs/VALIDATION_1.4.1.md`](docs/VALIDATION_1.4.1.md)
+- [`docs/VALIDATION_1.4.3.md`](docs/VALIDATION_1.4.3.md)
 
 ## 前置要求
 
@@ -81,7 +81,7 @@ FRV 的 native reader 使用版本限定的内部结构并带有兼容性检查�
 
 1. 关闭游戏。
 2. 禁用或删除所有旧 DRIVER HUD，包括 Resolver / FRV / Tank Probe 测试分支。
-3. 将 `DRIVER_HUD_1.4.1.zip` 直接导入 Arsenal，并启用 **Core**。
+3. 将 `DRIVER_HUD_1.4.3.zip` 直接导入 Arsenal，并启用 **Core**。
 4. 单独安装并启用 **Bingus Shared Loader v15**。
 5. 确认 BSL 的最终有效优先级正确。
 6. 执行 **Purge**。
@@ -92,61 +92,32 @@ FRV 的 native reader 使用版本限定的内部结构并带有兼容性检查�
 
 GitHub Release 与 Nexus Main File 可以使用同一个安装 ZIP。
 
-## FRV HUD 位置与大小
+## HUD 统一设置
 
-1.4.x 已不再需要旧的 CMD / PowerShell 图形配置器。
+启动一次游戏后，用记事本打开：
 
-启用 DRIVER HUD 启动游戏一次后，MOD 会创建：
+`%APPDATA%\Arrowhead\Helldivers2\driver_hud_settings.txt`
 
-```text
-%APPDATA%\Arrowhead\Helldivers2\frv_hud_position.txt
-```
+修改并保存，约两秒生效；不用修改 ZIP、重新部署或重启游戏。保留所有设置项；缺项、重复、越界、半写入或格式错误时整份配置不生效，继续使用上次有效设置。UTF-8 和带 BOM 的 UTF-16 均支持。
 
-文件中已经包含中英文说明。使用记事本打开并修改：
+| 设置 | 默认值 | 含义 |
+|---|---:|---|
+| tank_offset_y | 155 | 坦克 HUD 参考分辨率距底部位置，45～500 |
+| tank_scale | 1 | 坦克 HUD 缩放，0.5～2 |
+| frv_x | 0.714 | FRV 中心横向位置，左 0 → 右 1 |
+| frv_y | 0.90 | FRV 中心纵向位置，上 0 → 下 1 |
+| frv_scale | 1 | FRV HUD 缩放，0.5～2 |
+| alpha | 0.76 | 两种 HUD 不透明度，0.1～1 |
+| font | new | `new` 几何数字；`old` 原版游戏字体 |
+| reload_ring | true | 显示坦克装填提示环 |
+| reticle | true | 显示坦克中心瞄准点 |
+| weapon_cache | true | 启用经过交叉核对的实验性武器组件读取 |
+| debug | true | 记录诊断日志 |
+| perf | false | 记录每十秒 Lua CPU 时间与原生读取统计 |
 
-```ini
-x = 0.714
-y = 0.900
-scale = 1.000
-```
+首次创建时迁入旧 `driver_hud.cfg` 与 `frv_hud_position.txt`／`.json` 的有效设置；已有字体偏好保留。之后只编辑统一文件。包内 `driver_hud_settings.example.txt` 仅供参考，不会覆盖 AppData 设置。没有 CMD、PowerShell 或 EXE 配置器；这不代表已经通过 Nexus 扫描。
 
-- `x`：HUD 中心水平位置（`0 = 最左`，`1 = 最右`）
-- `y`：HUD 中心垂直位置（`0 = 顶部`，`1 = 底部`）
-- `scale`：FRV HUD 大小（`0.5` ～ `2.0`）
-
-保存后，游戏运行时通常会在约 **2 秒**内读取新位置。
-
-真正使用的配置文件位于 AppData，**不在 MOD ZIP 里**。因此直接把 ZIP 导入 Arsenal 的玩家也能正常修改和保存设置，不需要解压 MOD、不需要在压缩软件里确认更新文件，也不用为了移动 HUD 重新执行 Purge / Deploy 或重启游戏。
-
-首次生成 TXT 时，会自动迁移旧 `frv_hud_position.json` 中有效的设置。TXT 创建后只需编辑 TXT；更新 DRIVER HUD 也不会主动覆盖已经存在的位置配置。
-
-## 其他配置
-
-可选的 `driver_hud.cfg` 位于同一个 AppData 目录，安装 ZIP 中附有模板：
-
-```text
-%APPDATA%\Arrowhead\Helldivers2\driver_hud.cfg
-```
-
-默认值：
-
-```ini
-debug=true
-perf=false
-offset_y=155
-scale=1
-alpha=0.76
-geometry_numbers=true
-```
-
-- `offset_y` — 坦克 HUD 垂直位置
-- `scale` — 坦克 HUD 大小
-- `alpha` — 两种 HUD 共用的透明度
-- `debug` — 诊断日志
-- `perf` — 可选性能诊断，主要用于调试
-- `geometry_numbers=false` — 恢复原来的数字字体路径，不使用几何数字
-
-修改 `driver_hud.cfg` 后需要重启游戏；FRV 位置 TXT 不需要。
+旧字体继续调用旧源码的 `core/performance_hud/debug`。用户提供的旧截图与该路径的使用没有发现矛盾；资源名称已核对，最终游戏像素效果需实机比较。默认新字体是随 HUD 几何绘制的数字。
 
 ## 常见问题排查
 
@@ -195,7 +166,7 @@ Bingus Shared Loader 日志：
 构建安装 ZIP：
 
 ```text
-python build.py dist/DRIVER_HUD_1.4.1.zip
+python build.py dist/DRIVER_HUD_1.4.3.zip
 ```
 
 构建系统会保留 1.2.1 稳定基线中的原版堡垒坦克核心区块，组合当前 runtime / UI 模块，生成二进制 patch payload，并把 `package/` 打包成可直接导入 Arsenal 的 ZIP。
@@ -220,26 +191,6 @@ evidence/                   当前源码快照的验证输出
 ```
 
 仓库 / 发布包不分发游戏 DLL、进程转储、heap snapshot、第三方加载器、字体文件或 Windows 图形配置器可执行脚本。
-
-## 开发与验证说明
-
-目标运行时是 **LuaJIT**。仓库包含针对坦克状态 / UI、FRV 整合、异常容错、性能调度契约、FRV TXT 配置、日志轮转、Win32 adapter、历史采样回放和安装包结构的 focused tests。
-
-自动回归测试可以防止已经发现的问题重新出现，但无法代替所有实机多人组合，也不能等价于真实游戏 FPS 基准。当前源码快照的实际验证范围见 [`docs/VALIDATION_1.4.1.md`](docs/VALIDATION_1.4.1.md)。
-
-《绝地潜兵 2》更新后，即使 HUD 本身没有变化，也可能需要 DRIVER HUD 重新适配内部结构。
-
-## 1.4.1 版本说明
-
-1.4.1 将已完成实机短验的 1.4.0-HF1 路径正式化：
-
-- 修复首版 1.4.0 测试中 Arsenal 旧身份残留导致坦克 HUD 实际仍加载旧版本的问题
-- 保留 1.4.0 新增的加特林 / 导弹坦克 HUD
-- 两种坦克的装填提示都保持在**可装填武器图标左侧**
-- 保留外部中英双语 FRV TXT 配置
-- 保留 1.3.5 的 native 兼容保护、轮胎故障隔离和几何数字绘制路径
-
-完整历史请查看 [`CHANGELOG.md`](CHANGELOG.md)。
 
 ## 开源与署名
 

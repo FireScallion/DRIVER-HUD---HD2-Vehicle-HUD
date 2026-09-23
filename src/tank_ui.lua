@@ -18,8 +18,10 @@ function Tank.draw_new(w,h)
  local missiles=not a.ambiguous and ra and rb and ra.value and rb.value and (ra.value.ammo+rb.value.ammo)
  local stale_g=g and M.clock-(gat.at or 0)>Tank.STALE_AFTER or false
  local stale_m=missiles and (M.clock-(ra.at or 0)>Tank.STALE_AFTER or M.clock-(rb.at or 0)>Tank.STALE_AFTER) or false
+ local uncertain_g=g and Tank.sync_uncertain(a,a.gatling) or false
+ local uncertain_m=missiles and (Tank.sync_uncertain(a,a.racks[1]) or Tank.sync_uncertain(a,a.racks[2])) or false
  local key=table.concat({'new_tank',w,h,a.key,tostring(M.hp),tostring(M.max),g and g.current or '?',
-  g and g.reserve or '?',tostring(missiles),tostring(stale_g),tostring(stale_m)},':')
+  g and g.reserve or '?',tostring(missiles),tostring(stale_g),tostring(stale_m),tostring(uncertain_g),tostring(uncertain_m)},':')
  if key==M.draw_key then return end
  clear()
  local s=math.min(w/1920,h/1080)*C.scale;local x=w/2-180*s;local y=C.offset_y*s;local alpha=C.alpha
@@ -42,22 +44,22 @@ function Tank.draw_new(w,h)
  end
  if not g then rect(bx+bw/2-3*s,y+25*s,6*s,s,ga*.65) end
  -- A short dotted underline denotes last-known, NOT freshly sampled, telemetry.
- if stale_g then for i=0,7 do rect(bx+i*13*s,y+19*s,4*s,s,alpha*.45) end end
+ if stale_g or uncertain_g then for i=0,7 do rect(bx+i*13*s,y+19*s,4*s,s,alpha*.45) end end
  local ma=alpha*(stale_m and .45 or 1)
  bullet(x+314*s,y+25*s,s,ma);text(missiles and tostring(missiles) or '--',x+329*s,y+23*s,18*s,ma)
- if stale_m then for i=0,2 do rect(x+(329+i*7)*s,y+20*s,3*s,s,alpha*.45) end end
+ if stale_m or uncertain_m then for i=0,2 do rect(x+(329+i*7)*s,y+20*s,3*s,s,alpha*.45) end end
  local ds=math.min(w/1920,h/1080)
- disk(w/2,h/2,3.2*ds,.10);disk(w/2,h/2,2.5*ds,.18);disk(w/2,h/2,1.8*ds,.35);disk(w/2,h/2,1.1*ds,.5)
+ if C.reticle~=false then disk(w/2,h/2,3.2*ds,.10);disk(w/2,h/2,2.5*ds,.18);disk(w/2,h/2,1.8*ds,.35);disk(w/2,h/2,1.1*ds,.5) end
  M.draw_key=key
 end
 function Tank.draw_ring(w,h)
  local a=Tank.active;local r=a and a.reload
- if not r or r.phase=='idle' then Tank.clear_ring();return end
+ if C.reload_ring==false or not r or r.phase=='idle' then Tank.clear_ring();return end
  local suspended=FRV.grace_until~=nil
  -- Rendering may continue in native display-grace, but state must not advance.
  local progress=r.known_start and math.max(0,math.min(.985,r.elapsed/4)) or nil
  local steps=progress and math.floor(progress*48+.0001) or -1
- local key=table.concat({a.key,w,h,steps,r.phase,tostring(suspended),tostring(M.gui)},':')
+ local key=table.concat({a.key,w,h,steps,r.phase,tostring(r.telemetry_stale),tostring(suspended),tostring(M.gui)},':')
  if key==Tank.ring_key then return end
  Tank.clear_ring()
  local saved=M.ids;M.ids={}
@@ -68,7 +70,7 @@ function Tank.draw_ring(w,h)
   -- Keep a visible gap so the ring never crowds the icon or ammo text/bars.
   local cx=w/2+(a.kind=='new' and -25 or 14)*s;local cy=(C.offset_y+31)*s
   local radius=(a.kind=='new' and 8.5 or 8.0)*s
-  local alpha=C.alpha*((r.phase=='paused' or r.phase=='uncertain' or suspended) and .5 or .9)
+  local alpha=C.alpha*.9 -- Constant brightness through pauses and telemetry gaps.
   for i=0,47 do
    local from=math.pi*.5-i*math.pi/24;local to=math.pi*.5-(i+.86)*math.pi/24
    local bright=steps>=0 and i<steps

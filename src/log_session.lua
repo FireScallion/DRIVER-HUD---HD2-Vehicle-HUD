@@ -91,7 +91,7 @@ local function log(s)
 end
 local LOG_UTC=(os and os.date and call(os.date,'!%Y-%m-%dT%H:%M:%SZ')) or 'unknown'
 if LOG_ROTATION=='same_process' then
- log('DRIVER_HUD SCRIPT_RELOAD version=1.4.1 pid='..tostring(LOG_SESSION_PID or 'unknown')..' utc='..tostring(LOG_UTC))
+ log('DRIVER_HUD SCRIPT_RELOAD version=1.4.3 pid='..tostring(LOG_SESSION_PID or 'unknown')..' utc='..tostring(LOG_UTC))
 else
- log('DRIVER_HUD SESSION_START version=1.4.1 pid='..tostring(LOG_SESSION_PID or 'unknown')..' session='..tostring(LOG_SESSION_KEY)..' rotation='..tostring(LOG_ROTATION)..' utc='..tostring(LOG_UTC))
+ log('DRIVER_HUD SESSION_START version=1.4.3 pid='..tostring(LOG_SESSION_PID or 'unknown')..' session='..tostring(LOG_SESSION_KEY)..' rotation='..tostring(LOG_ROTATION)..' utc='..tostring(LOG_UTC))
 end
