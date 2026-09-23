@@ -113,8 +113,6 @@ Save to apply in about two seconds. Keep every setting. Invalid, incomplete, dup
 
 Existing `driver_hud.cfg` and `frv_hud_position.txt`/`.json` values are imported on first creation, including an existing font preference. Afterwards edit only the unified file. The packaged `.example.txt` is reference material and is not deployed over your settings. There is no external executable or shell configurator. Nexus scanning was not performed.
 
-The old font uses the original source's `core/performance_hud/debug` resource. Its source identity is verified; the user-provided screenshot is consistent with the legacy path, but final pixel appearance needs an in-game comparison.
-
 ## Other configuration
 
 Optional `driver_hud.cfg` lives in the same AppData folder. A template is included in the installation ZIP.
