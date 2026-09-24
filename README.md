@@ -113,47 +113,6 @@ Save to apply in about two seconds. Keep every setting. Invalid, incomplete, dup
 
 Existing `driver_hud.cfg` and `frv_hud_position.txt`/`.json` values are imported on first creation, including an existing font preference. Afterwards edit only the unified file. The packaged `.example.txt` is reference material and is not deployed over your settings. There is no external executable or shell configurator. Nexus scanning was not performed.
 
-## Other configuration
-
-Optional `driver_hud.cfg` lives in the same AppData folder. A template is included in the installation ZIP.
-
-```text
-%APPDATA%\Arrowhead\Helldivers2\driver_hud.cfg
-```
-
-Default values:
-
-```ini
-debug=true
-perf=false
-offset_y=155
-scale=1
-alpha=0.76
-geometry_numbers=true
-```
-
-- `offset_y` — tank HUD vertical position
-- `scale` — tank HUD scale
-- `alpha` — opacity used by both HUD styles
-- `debug` — diagnostic logging
-- `perf` — optional performance diagnostics; intended for debugging
-- `geometry_numbers=false` — restores the original numeric font path instead of geometry numerals
-
-Changes to `driver_hud.cfg` require a game restart. FRV position TXT changes do not.
-
-## Troubleshooting
-
-If the HUD does not appear:
-
-1. Make sure only one DRIVER HUD version is enabled.
-2. Remove old Tank / FRV / Resolver probe builds.
-3. Confirm Bingus Shared Loader v15 is enabled.
-4. Check the effective BSL priority in Arsenal.
-5. Run Purge and Deploy again.
-6. Open `driver_hud.log` and confirm the startup lines report the version you expected to install.
-
-Game updates can change internal vehicle/network structures. A fresh log is particularly useful when a problem starts immediately after a Helldivers 2 update.
-
 ## Logs and bug reports
 
 DRIVER HUD keeps the current and previous game-process logs:
