@@ -112,8 +112,6 @@ GitHub Release 与 Nexus Main File 可以使用同一个安装 ZIP。
 
 首次创建时迁入旧 `driver_hud.cfg` 与 `frv_hud_position.txt`／`.json` 的有效设置；已有字体偏好保留。之后只编辑统一文件。包内 `driver_hud_settings.example.txt` 仅供参考，不会覆盖 AppData 设置。没有 CMD、PowerShell 或 EXE 配置器；这不代表已经通过 Nexus 扫描。
 
-旧字体继续调用旧源码的 `core/performance_hud/debug`。用户提供的旧截图与该路径的使用没有发现矛盾；资源名称已核对，最终游戏像素效果需实机比较。默认新字体是随 HUD 几何绘制的数字。
-
 ## 常见问题排查
 
 如果 HUD 完全不显示：
