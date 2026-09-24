@@ -1,4 +1,4 @@
--- 1.4.3: staged reload and retained telemetry. Raw ammo values; no ammo prediction.
+-- 1.4.4: staged reload and retained telemetry. Raw ammo values; no ammo prediction.
 -- No type brute force, world scan, GOID adjacency binding or ammo prediction.
 Tank={active=nil,history={},history_serial=0,MAX_HISTORY=8,KEEP_PROGRESS=120,STALE_AFTER=3,RELOAD_STALE_AFTER=1}
 Tank.NEW_RESOURCE='b0c9faf4af8903f9'

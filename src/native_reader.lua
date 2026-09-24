@@ -1,10 +1,11 @@
 -- Version-scoped, identity-keyed readers. Only the Win32 adapter reads memory.
 -- Pure Lua byte decoding avoids rounding uint64 resource IDs through doubles.
 local Native = (function()
- local N={version='r4-73374bd4',ready=false,next_check=0}
- -- 2026-09-22 build: roots AND Health/network/settings layouts were re-derived.
+ local N={version='r4-layout-v2',ready=false,next_check=0}
+ -- Reviewed on 2026-09-22 and 2026-09-24 loaded images. Same read layout.
+ -- Build metadata is diagnostic; exact semantic guards authorize these RVAs.
  N.roots={network=0x346BF98,health=0x3326688,synced=0x3326C98,seater=0x3326D78}
- N.pe={machine=0x8664,sections=16,timestamp=0x6AA96B14,size=0x4770000,checksum=0xF05B12}
+ N.pe={machine=0x8664,sections=16,timestamp=0x6AB3B43F,size=0x4744000,checksum=0xECDA6F}
  local function u32(s,o)
   local a,b,c,d=s:byte(o+1,o+4)
   if not d then error('short uint32',0) end
@@ -293,6 +294,7 @@ local Native = (function()
   {0x6b26e5,"448b178d4bfe418bc10f57c9d3e883e003f3480f2ac8f30f5eca4183faff7504448b5614418d5001418bc8c1ea058bc2c1e0052bc8498b54d5208d0c4d0200000048d3eaf6c203751866410f6ec20f5bc0f30f59c1f30f2cc0"}, -- q2_and_damage_independent
  }
  function N.check_module(read,base)
+  N.image_size=nil
   local b=read(base,512)
   if not b or #b~=512 or b:sub(1,2)~='MZ' then return false,'module header unreadable' end
   local off=u32(b,0x3C)
@@ -300,13 +302,25 @@ local Native = (function()
   local p=read(base+off,112)
   if not p or #p~=112 or p:sub(1,4)~='PE\0\0' then return false,'module PE signature' end
   local machine=p:byte(5)+256*p:byte(6);local sections=p:byte(7)+256*p:byte(8)
-  if machine~=N.pe.machine or sections~=N.pe.sections or u32(p,8)~=N.pe.timestamp
-   or u32(p,80)~=N.pe.size or u32(p,88)~=N.pe.checksum then return false,'unsupported game.dll PE identity' end
+  local optional_size=p:byte(21)+256*p:byte(22)
+  local magic=p:byte(25)+256*p:byte(26)
+  local size=u32(p,80)
+  if machine~=0x8664 or magic~=0x20B or optional_size<112 or sections<1 or sections>96
+   or size<4096 or size>134217728 then return false,'unsupported game.dll PE structure' end
+  -- Timestamp/checksum/image size can change while the read contract stays intact.
+  -- Never infer compatibility from PE metadata alone, including known builds.
+  for _,rva in pairs(N.roots) do
+   if rva+8>size then return false,'native root outside module' end
+  end
   for _,v in ipairs(N.guards) do
    local want=v[2]:gsub('..',function(h)return string.char(tonumber(h,16))end)
-   if read(base+v[1],#want)~=want then return false,string.format('native code guard 0x%X',v[1]) end
+   if v[1]+#want>size or read(base+v[1],#want)~=want then
+    return false,string.format('native code guard 0x%X',v[1])
+   end
   end
-  return true,'PE+'..#N.guards..' reviewed code guards'
+  N.image_size=size
+  return true,string.format('layout=%s PE=%08X/%08X/%08X guards=%d',
+   N.version,u32(p,8),size,u32(p,88),#N.guards)
  end
  function N.open_win32()
   local ok,ffi=pcall(require,'ffi')
@@ -375,12 +389,18 @@ local Native = (function()
   if not base then N.ready=false;N.next_check=now+1;N.reason='game.dll not yet loaded';return false,N.reason end
   N.win.begin_sample()
   local ok,valid,why=pcall(N.check_module,N.win.read,base)
+  N.weapon_base=nil -- Revalidate weapon guards after each bounded core check, including recovery.
   if not ok or not valid then
    N.ready=false;N.reason=why or tostring(valid)
    -- Retry loaded-code checks slowly (initialization), never use failed offsets.
    N.next_check=now+10;return false,N.reason
   end
-  N.ready=true;N.base=base;N.reason=why;return true
+  N.ready=true;N.base=base;N.reason=why
+  if N.logged_contract~=why then
+   if log then log('NATIVE_COMPATIBLE '..why) end
+   N.logged_contract=why
+  end
+  return true
  end
  function N.sample_graph()
   N.win.begin_sample()

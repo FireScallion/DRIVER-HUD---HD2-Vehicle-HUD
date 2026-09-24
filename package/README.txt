@@ -1,9 +1,9 @@
-DRIVER HUD 1.4.3
+DRIVER HUD 1.4.5
 
 Vehicle HUDs for the original Bastion, Gatling/missile tank, HMG FRV and Supply FRV. Requires Bingus Shared Loader v15 / API 1, installed separately.
 
 INSTALL
-Close the game. Disable other DRIVER HUD versions and vehicle probe mods. Import DRIVER_HUD_1.4.3.zip into Arsenal, enable Core, then Purge and Deploy. Keep your existing working BSL setup and load order. Enable only one DRIVER HUD version.
+Close the game. Disable other DRIVER HUD versions and vehicle probe mods. Import DRIVER_HUD_1.4.5.zip into Arsenal, enable Core, then Purge and Deploy. Keep your existing working BSL setup and load order. Enable only one DRIVER HUD version.
 
 SETTINGS
 After starting the game once, open this file with Notepad:

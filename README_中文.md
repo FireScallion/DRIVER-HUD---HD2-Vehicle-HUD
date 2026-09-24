@@ -2,8 +2,8 @@
 
 一个面向 **《绝地潜兵 2 / Helldivers 2》** 的轻量级载具状态 HUD Mod。它的目标很简单：让载具乘员能及时看清车辆状态，同时不把 HUD 本身变成另一种信息噪音。
 
-**当前版本：1.4.3**  
-[English README](README.md) · [Nexus Mods](https://www.nexusmods.com/helldivers2/mods/16358) · [GitHub 最新 Release](https://github.com/FireScallion/DRIVER-HUD---HD2-Vehicle-HUD/releases/latest) · [更新日志](CHANGELOG.md)
+**当前版本：1.4.5**  
+[English README](README.md) · [Nexus Mods](https://www.nexusmods.com/helldivers2/mods/16358) · [GitHub 最新 Release](https://github.com/FireScallion/DRIVER-HUD---HD2-Vehicle-HUD/releases/latest)
 
 DRIVER HUD 目前为两种坦克，以及机枪 FRV / 补给 FRV 提供紧凑的载具状态显示，包括车体生命值、武器弹药、装填状态和轮胎状态等信息，并尽量保持接近游戏原本的视觉语言。
 
@@ -60,12 +60,7 @@ DRIVER HUD 目前为两种坦克，以及机枪 FRV / 补给 FRV 提供紧凑的
 
 坦克静态 HUD 与动态装填环分别缓存，因此装填动画推进时无需每帧重新创建生命条、数字、准星和其他静态元素。
 
-FRV 的 native reader 使用版本限定的内部结构并带有兼容性检查。如果游戏更新后实际布局不再符合当前契约，对应 native 路径会停止使用，而不会继续读取不可信的内存位置。
-
-实现与验证说明见：
-
-- [`docs/PERFORMANCE_说明.txt`](docs/PERFORMANCE_说明.txt)
-- [`docs/VALIDATION_1.4.3.md`](docs/VALIDATION_1.4.3.md)
+原生载具与武器读取需要通过关键代码和数据布局校验。游戏 DLL 仅改变时间戳或校验和时，不会单独导致兼容的读取被停用；如果所需结构改变，仍可能需要更新模组。
 
 ## 前置要求
 
@@ -81,7 +76,7 @@ FRV 的 native reader 使用版本限定的内部结构并带有兼容性检查�
 
 1. 关闭游戏。
 2. 禁用或删除所有旧 DRIVER HUD，包括 Resolver / FRV / Tank Probe 测试分支。
-3. 将 `DRIVER_HUD_1.4.3.zip` 直接导入 Arsenal，并启用 **Core**。
+3. 将 `DRIVER_HUD_1.4.5.zip` 直接导入 Arsenal，并启用 **Core**。
 4. 单独安装并启用 **Bingus Shared Loader v15**。
 5. 确认 BSL 的最终有效优先级正确。
 6. 执行 **Purge**。
@@ -116,6 +111,8 @@ GitHub Release 与 Nexus Main File 可以使用同一个安装 ZIP。
 | perf | false | 记录每十秒 Lua CPU 时间与原生读取统计 |
 
 首次创建时迁入旧 `driver_hud.cfg` 与 `frv_hud_position.txt`／`.json` 的有效设置；已有字体偏好保留。之后只编辑统一文件。包内 `driver_hud_settings.example.txt` 仅供参考，不会覆盖 AppData 设置。没有 CMD、PowerShell 或 EXE 配置器；这不代表已经通过 Nexus 扫描。
+
+旧字体继续调用旧源码的 `core/performance_hud/debug`。用户提供的旧截图与该路径的使用没有发现矛盾；资源名称已核对，最终游戏像素效果需实机比较。默认新字体是随 HUD 几何绘制的数字。
 
 ## 常见问题排查
 
@@ -159,12 +156,12 @@ Bingus Shared Loader 日志：
 
 ## 从源码构建
 
-仓库包含可编辑 Lua 模块、稳定的堡垒坦克基线、构建脚本、发布包模板、focused regression tests，以及当前源码快照对应的验证输出。
+源码包包含可编辑 Lua 模块、稳定的堡垒坦克基线、构建脚本与安装包模板。
 
 构建安装 ZIP：
 
 ```text
-python build.py dist/DRIVER_HUD_1.4.3.zip
+python build.py dist/DRIVER_HUD_1.4.5.zip
 ```
 
 构建系统会保留 1.2.1 稳定基线中的原版堡垒坦克核心区块，组合当前 runtime / UI 模块，生成二进制 patch payload，并把 `package/` 打包成可直接导入 Arsenal 的 ZIP。
@@ -184,8 +181,6 @@ src/log_session.lua         每个游戏进程的日志轮转
 baseline/                   原版堡垒坦克稳定基线
 package/                    发布包模板
 package/CORE/               打包后的 patch / GUI material 资源
-tests/                      focused 离线回归测试
-evidence/                   当前源码快照的验证输出
 ```
 
 仓库 / 发布包不分发游戏 DLL、进程转储、heap snapshot、第三方加载器、字体文件或 Windows 图形配置器可执行脚本。

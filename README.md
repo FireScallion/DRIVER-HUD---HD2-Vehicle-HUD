@@ -2,8 +2,8 @@
 
 A lightweight vehicle-status HUD mod for **Helldivers 2**, built around one simple idea: vehicle crews should be able to read the state of their machine without turning the HUD into another source of noise.
 
-**Current version: 1.4.3**  
-[中文说明](README_中文.md) · [Nexus Mods](https://www.nexusmods.com/helldivers2/mods/16358) · [Latest GitHub Release](https://github.com/FireScallion/DRIVER-HUD---HD2-Vehicle-HUD/releases/latest) · [Changelog](CHANGELOG.md)
+**Current version: 1.4.5**  
+[中文说明](README_中文.md) · [Nexus Mods](https://www.nexusmods.com/helldivers2/mods/16358) · [Latest GitHub Release](https://github.com/FireScallion/DRIVER-HUD---HD2-Vehicle-HUD/releases/latest)
 
 DRIVER HUD adds compact status displays for both supported tank variants and the HMG / Supply FRVs. It shows information such as hull health, weapon ammunition, reload state, and tire condition while keeping the presentation close to the visual language of the game.
 
@@ -61,7 +61,7 @@ The production runtime uses bounded sampling and cached presentation rather than
 
 Static tank graphics and the animated reload overlay are cached separately, so advancing a reload ring does not require recreating the full HUD every frame.
 
-The native FRV reader is version-scoped and guarded. If the expected game layout no longer matches after a Helldivers 2 update, the affected native path is designed to fail closed rather than continue reading arbitrary memory.
+Native vehicle and weapon reads require matching code and data-layout guards. Changes to the game DLL timestamp or checksum alone do not disable compatible reads. Updates that change the required layout can still require a mod update.
 
 ## Requirement
 
@@ -77,7 +77,7 @@ If you use Arsenal's **First-Mod Priority** option, use the equivalent reversed 
 
 1. Close the game.
 2. Disable or remove every older DRIVER HUD version, including Resolver / FRV / Tank Probe test builds.
-3. Import `DRIVER_HUD_1.4.3.zip` directly into Arsenal and enable **Core**.
+3. Import `DRIVER_HUD_1.4.5.zip` directly into Arsenal and enable **Core**.
 4. Install and enable **Bingus Shared Loader v15** separately.
 5. Confirm BSL has the correct final effective priority.
 6. Run **Purge**.
@@ -183,12 +183,12 @@ When reporting an issue, please include:
 
 ## Building from source
 
-The repository contains the editable Lua modules, the stable Bastion baseline, build script, package template, focused regression tests, and release-validation evidence.
+The source package contains editable Lua modules, the stable Bastion baseline, the build script and the installation-package template.
 
 Build the installation ZIP with:
 
 ```text
-python build.py dist/DRIVER_HUD_1.4.1.zip
+python build.py dist/DRIVER_HUD_1.4.5.zip
 ```
 
 The build system preserves the original stable Bastion sections from the 1.2.1 baseline, composes the current runtime/UI modules, writes the binary patch payload, and packages `package/` into the Arsenal-ready ZIP.
@@ -208,8 +208,6 @@ src/log_session.lua         per-game-process log rotation
 baseline/                   stable original Bastion baseline
 package/                    release-package template
 package/CORE/               packaged patch / GUI material payloads
-tests/                      focused offline regression tests
-evidence/                   validation outputs for the source snapshot
 ```
 
 No game DLLs, process dumps, heap snapshots, third-party loaders, font files, or Windows configurator executables are distributed in the repository/release package.

@@ -7,8 +7,8 @@ BASE=ROOT/'baseline'
 def assemble():
     source=(BASE/'driver_hud_1_2_1.lua').read_text(encoding='utf-8')
     source=source.replace('-- DRIVER HUD 1.2.1. Multi-Bastion binding hotfix; main gun is 30+1 (31 total); debug logging enabled by default.',
-        '-- DRIVER HUD 1.4.3. Tank + FRV integration with isolated telemetry and staged reloads and retained display through telemetry gaps.')
-    source=source.replace("log('DRIVER_HUD 1.2.1 START')", "log('DRIVER_HUD 1.4.3 START native_contract=r4-73374bd4 proxy_unit_health=1 wheel_fault_isolation=1 robustness_pass=1 geometry_numbers='..tostring(C.geometry_numbers))")
+        '-- DRIVER HUD 1.4.5. Tank + FRV integration with isolated telemetry and staged reloads and retained display through telemetry gaps.')
+    source=source.replace("log('DRIVER_HUD 1.2.1 START')", "log('DRIVER_HUD 1.4.5 START native_contract=r4-layout-v2 proxy_unit_health=1 wheel_fault_isolation=1 robustness_pass=1 geometry_numbers='..tostring(C.geometry_numbers))")
     source=source.replace('local M={ids={}', 'local FRV, Tank -- Forward declarations for lifecycle reset.\nlocal M={ids={}',1)
     source=source.replace('local function full_reset()\n', "local function full_reset()\n if Tank then Tank.detach() end\n if FRV then FRV.reset() end\n",1)
     source=source.replace('local C={debug=true,','local C={geometry_numbers=true,perf=false,debug=true,',1)
@@ -69,7 +69,7 @@ def build(destination=None):
     struct.pack_into('<I',header,160,len(payload)+8);struct.pack_into('<I',header,184,len(payload))
     stage=ROOT/'package';patch=stage/'CORE/9ba626afa44a3aa3.patch_0';patch.parent.mkdir(parents=True,exist_ok=True)
     patch.write_bytes(bytes(header)+payload)
-    report={'version':'1.4.3','lua_bytes':len(payload),'source_sha256':hashlib.sha256(payload).hexdigest(),
+    report={'version':'1.4.5','lua_bytes':len(payload),'source_sha256':hashlib.sha256(payload).hexdigest(),
       'baseline_sha256':hashlib.sha256((BASE/'driver_hud_1_2_1.lua').read_bytes()).hexdigest()}
     if destination:
         destination=Path(destination);destination.parent.mkdir(parents=True,exist_ok=True)

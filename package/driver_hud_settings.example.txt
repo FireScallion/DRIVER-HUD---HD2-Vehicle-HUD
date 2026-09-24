@@ -1,4 +1,4 @@
-# DRIVER HUD 1.4.3 - Unified HUD settings / 统一设置
+# DRIVER HUD 1.4.5 - Unified HUD settings / 统一设置
 # Edit in Notepad and save; applies in about 2 seconds / 记事本保存后约两秒生效
 # Invalid edits preserve ALL previous settings / 格式错误保留全部上次设置
 # font = new (default / 默认几何字体) or old (旧版字体)

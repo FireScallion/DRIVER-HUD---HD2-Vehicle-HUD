@@ -24,6 +24,55 @@ function Tank.learn_profile(c,n)
   all[r]={shape=c.shape,model=c.cache_model,state_ok=c.state_cache_ok==true};log('TANK_RESOURCE_LEARNED resource='..r..' shape='..c.shape..' model='..c.cache_model)
  end
 end
+-- Narrow cold-start fallback for the two verified rocket pods. Evidence is
+-- local to the current hull/reference set and never teaches a session profile.
+local ROCKET_RESOURCE='8aff7f0793a5bced'
+local function rocket_sample(a,q,id,exists,n,now)
+ if a.kind~='new' then return end
+ if a.rocket_ref_key~=a.ref_key then a.rocket_ref_key=a.ref_key;a.rack_unknown_since=now end
+ if not a.rack_unknown_since then a.rack_unknown_since=now end
+ local m=n and n.magazine;local d=n and n.descriptor
+ if C.weapon_cache==false or exists==false or resource(n)~=ROCKET_RESOURCE
+  or not m or not integer(m.current,10) or not d or d.goid~=id then q.rocket_evidence=nil;return end
+ local old=q.rocket_evidence;local same=old and old.ref_key==a.ref_key and now-old.at<=1.2
+  and old.descriptor.entity==d.entity and old.descriptor.unit==d.unit
+  and old.descriptor.goid==d.goid and old.descriptor.resource==d.resource
+ q.rocket_evidence={descriptor=d,current=m.current,at=now,ref_key=a.ref_key,
+  samples=same and old.samples+1 or 1,
+  decreased=same and (old.decreased or m.current<old.current) or false}
+end
+function Tank.try_rocket_fallback(a,now)
+ if C.weapon_cache==false or a.kind~='new' or not Tank.is_new() or a.ambiguous or #a.refs~=5 then return end
+ local complete=#(a.racks or {})==2
+ if complete then
+  for _,id in ipairs(a.racks)do local c=a.children[id];complete=complete and c and c.value and c.value.ammo~=nil end
+ end
+ if complete then a.rack_unknown_since=nil;return end
+ a.rack_unknown_since=a.rack_unknown_since or now
+ local candidates={};local decreased=false
+ for _,id in ipairs(a.refs)do
+  local q=a.observed and a.observed[id]
+  if q and resource(q.native)==ROCKET_RESOURCE then
+   local e=q.rocket_evidence;local c=a.children[id]
+   if not e or e.ref_key~=a.ref_key or e.samples<2 or now-e.at>1.2 or q.exists==false
+    or (c and (c.shape~='rack' or c.cache_rejected)) then return end
+   candidates[#candidates+1]={id=id,e=e};decreased=decreased or e.decreased
+  end
+ end
+ if #candidates~=2 or (not decreased and now-a.rack_unknown_since<2) then return end
+ local allowed={};for _,v in ipairs(candidates)do allowed[v.id]=true end
+ for _,id in ipairs(a.racks or {})do if not allowed[id] then return end end
+ for _,v in ipairs(candidates)do
+  local c=a.children[v.id]
+  -- A healthy channel keeps its existing calibration and sampling schedule.
+  if not c or not c.value or c.value.ammo==nil then
+   if not Tank.bind_shape(a,v.id,'rack') then return end
+   c=a.children[v.id];c.native_descriptor=v.e.descriptor;c.cache_model='magazine_current'
+   c.value={ammo=v.e.current};c.at=v.e.at;c.cache_live=true
+   log('TANK_ROCKET_FALLBACK hull='..M.hull..' id='..v.id..' reason='..(decreased and 'observed_decrease' or 'unknown_timeout'))
+  end
+ end
+end
 local function scalar(x)
  if x==nil then return 'nil' end
  if type(x)=='number' or type(x)=='boolean' then return tostring(x) end
@@ -57,6 +106,7 @@ function Tank.observe(a,id,exists,f,reason,n,why,batch_attempt,native_attempt)
   end
  end
  if native_attempt then
+  rocket_sample(a,q,id,exists,n,now)
   q.native_attempts=(q.native_attempts or 0)+1;q.native_at=now;q.native=n;q.native_reason=why
   if n then q.native_success_at=now end
   local key=native_ammo(n)
@@ -121,4 +171,5 @@ function Tank.discover_child(session,a,id,now)
    log('TANK_NATIVE_DISCOVERY hull='..M.hull..' id='..id..' resource='..n.descriptor.resource..' shape='..c.shape..' source=session_resource_profile')
   end
  end
+ Tank.try_rocket_fallback(a,now)
 end

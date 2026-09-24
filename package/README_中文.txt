@@ -1,9 +1,9 @@
-DRIVER HUD 1.4.3
+DRIVER HUD 1.4.5
 
 支持旧型堡垒坦克、加特林／导弹坦克、重机枪 FRV 和补给 FRV 的载具 HUD。需要另行安装 Bingus Shared Loader v15 / API 1。
 
 安装
-关闭游戏，停用其他版本的 DRIVER HUD 和载具探针模组。将 DRIVER_HUD_1.4.3.zip 导入 Arsenal，启用 Core，然后执行 Purge、Deploy。沿用正常工作的 BSL 配置与加载顺序，同时只启用一个 DRIVER HUD。
+关闭游戏，停用其他版本的 DRIVER HUD 和载具探针模组。将 DRIVER_HUD_1.4.5.zip 导入 Arsenal，启用 Core，然后执行 Purge、Deploy。沿用正常工作的 BSL 配置与加载顺序，同时只启用一个 DRIVER HUD。
 
 设置
 首次启动游戏后，用记事本打开：

@@ -1,5 +1,5 @@
 -- HD2-Addon: mods/driverhud/driver_hud
--- DRIVER HUD 1.4.3. Tank + FRV integration with isolated telemetry and staged reloads and retained display through telemetry gaps.
+-- DRIVER HUD 1.4.5. Tank + FRV integration with isolated telemetry and staged reloads and retained display through telemetry gaps.
 local sr = rawget(_G, 'stingray')
 if not sr then return {installed=false} end
 if rawget(_G,'__DRIVER_HUD_INSTALLED') then return {installed=true} end
@@ -117,11 +117,11 @@ local function log(s)
 end
 local LOG_UTC=(os and os.date and call(os.date,'!%Y-%m-%dT%H:%M:%SZ')) or 'unknown'
 if LOG_ROTATION=='same_process' then
- log('DRIVER_HUD SCRIPT_RELOAD version=1.4.3 pid='..tostring(LOG_SESSION_PID or 'unknown')..' utc='..tostring(LOG_UTC))
+ log('DRIVER_HUD SCRIPT_RELOAD version=1.4.5 pid='..tostring(LOG_SESSION_PID or 'unknown')..' utc='..tostring(LOG_UTC))
 else
- log('DRIVER_HUD SESSION_START version=1.4.3 pid='..tostring(LOG_SESSION_PID or 'unknown')..' session='..tostring(LOG_SESSION_KEY)..' rotation='..tostring(LOG_ROTATION)..' utc='..tostring(LOG_UTC))
+ log('DRIVER_HUD SESSION_START version=1.4.5 pid='..tostring(LOG_SESSION_PID or 'unknown')..' session='..tostring(LOG_SESSION_KEY)..' rotation='..tostring(LOG_ROTATION)..' utc='..tostring(LOG_UTC))
 end
-log('DRIVER_HUD 1.4.3 START native_contract=r4-73374bd4 proxy_unit_health=1 wheel_fault_isolation=1 robustness_pass=1 geometry_numbers='..tostring(C.geometry_numbers))
+log('DRIVER_HUD 1.4.5 START native_contract=r4-layout-v2 proxy_unit_health=1 wheel_fault_isolation=1 robustness_pass=1 geometry_numbers='..tostring(C.geometry_numbers))
 local FRV, Tank -- Forward declarations for lifecycle reset.
 local M={ids={},frame=0,clock=0,seated=false,hull=nil,vehicle_ref=nil,cache={},known={},bind_retry=0,bind_weak=false,seat_enter_frame=0,preseat_owned={},entry_new_seen={},entry_owned_cursor=1,bg_owned_cursor=1}
 local function clear()
@@ -918,10 +918,11 @@ end
 -- Version-scoped, identity-keyed readers. Only the Win32 adapter reads memory.
 -- Pure Lua byte decoding avoids rounding uint64 resource IDs through doubles.
 local Native = (function()
- local N={version='r4-73374bd4',ready=false,next_check=0}
- -- 2026-09-22 build: roots AND Health/network/settings layouts were re-derived.
+ local N={version='r4-layout-v2',ready=false,next_check=0}
+ -- Reviewed on 2026-09-22 and 2026-09-24 loaded images. Same read layout.
+ -- Build metadata is diagnostic; exact semantic guards authorize these RVAs.
  N.roots={network=0x346BF98,health=0x3326688,synced=0x3326C98,seater=0x3326D78}
- N.pe={machine=0x8664,sections=16,timestamp=0x6AA96B14,size=0x4770000,checksum=0xF05B12}
+ N.pe={machine=0x8664,sections=16,timestamp=0x6AB3B43F,size=0x4744000,checksum=0xECDA6F}
  local function u32(s,o)
   local a,b,c,d=s:byte(o+1,o+4)
   if not d then error('short uint32',0) end
@@ -1210,6 +1211,7 @@ local Native = (function()
   {0x6b26e5,"448b178d4bfe418bc10f57c9d3e883e003f3480f2ac8f30f5eca4183faff7504448b5614418d5001418bc8c1ea058bc2c1e0052bc8498b54d5208d0c4d0200000048d3eaf6c203751866410f6ec20f5bc0f30f59c1f30f2cc0"}, -- q2_and_damage_independent
  }
  function N.check_module(read,base)
+  N.image_size=nil
   local b=read(base,512)
   if not b or #b~=512 or b:sub(1,2)~='MZ' then return false,'module header unreadable' end
   local off=u32(b,0x3C)
@@ -1217,13 +1219,25 @@ local Native = (function()
   local p=read(base+off,112)
   if not p or #p~=112 or p:sub(1,4)~='PE\0\0' then return false,'module PE signature' end
   local machine=p:byte(5)+256*p:byte(6);local sections=p:byte(7)+256*p:byte(8)
-  if machine~=N.pe.machine or sections~=N.pe.sections or u32(p,8)~=N.pe.timestamp
-   or u32(p,80)~=N.pe.size or u32(p,88)~=N.pe.checksum then return false,'unsupported game.dll PE identity' end
+  local optional_size=p:byte(21)+256*p:byte(22)
+  local magic=p:byte(25)+256*p:byte(26)
+  local size=u32(p,80)
+  if machine~=0x8664 or magic~=0x20B or optional_size<112 or sections<1 or sections>96
+   or size<4096 or size>134217728 then return false,'unsupported game.dll PE structure' end
+  -- Timestamp/checksum/image size can change while the read contract stays intact.
+  -- Never infer compatibility from PE metadata alone, including known builds.
+  for _,rva in pairs(N.roots) do
+   if rva+8>size then return false,'native root outside module' end
+  end
   for _,v in ipairs(N.guards) do
    local want=v[2]:gsub('..',function(h)return string.char(tonumber(h,16))end)
-   if read(base+v[1],#want)~=want then return false,string.format('native code guard 0x%X',v[1]) end
+   if v[1]+#want>size or read(base+v[1],#want)~=want then
+    return false,string.format('native code guard 0x%X',v[1])
+   end
   end
-  return true,'PE+'..#N.guards..' reviewed code guards'
+  N.image_size=size
+  return true,string.format('layout=%s PE=%08X/%08X/%08X guards=%d',
+   N.version,u32(p,8),size,u32(p,88),#N.guards)
  end
  function N.open_win32()
   local ok,ffi=pcall(require,'ffi')
@@ -1292,12 +1306,18 @@ local Native = (function()
   if not base then N.ready=false;N.next_check=now+1;N.reason='game.dll not yet loaded';return false,N.reason end
   N.win.begin_sample()
   local ok,valid,why=pcall(N.check_module,N.win.read,base)
+  N.weapon_base=nil -- Revalidate weapon guards after each bounded core check, including recovery.
   if not ok or not valid then
    N.ready=false;N.reason=why or tostring(valid)
    -- Retry loaded-code checks slowly (initialization), never use failed offsets.
    N.next_check=now+10;return false,N.reason
   end
-  N.ready=true;N.base=base;N.reason=why;return true
+  N.ready=true;N.base=base;N.reason=why
+  if N.logged_contract~=why then
+   if log then log('NATIVE_COMPATIBLE '..why) end
+   N.logged_contract=why
+  end
+  return true
  end
  function N.sample_graph()
   N.win.begin_sample()
@@ -1334,14 +1354,14 @@ local Native = (function()
   if ok then return result end;return nil,tostring(result)
  end
 -- Included INSIDE Native's lexical scope. Read-only component snapshots; no FFI calls
--- into game functions. Layout derives from the supplied 73374bd4 loaded module.
+-- into game functions. Layout verified against the 2026-09-22 and 2026-09-24 loaded modules.
 -- Each attempt re-resolves GOID -> descriptor -> entity -> component owner.
 N.weapon_guards={
  {0x76e1da,"4c8b156784bb02"},
  {0x76e1ea,"458b4a284533c048895c2430418b5a3048896c24"},
  {0x76e259,"8bd0488d0452488d0c8500000000498b4250c7040100000000498b42384d8b42504c03c1488b0cd0ba8b9164ec8b49104883c428"},
  {0x76e339,"8bd0488d0452488d0c8500000000498b425044897401044d8b4250498b42384983c0044c03c1488b0cd0ba3ed6a5d78b49104883c420415ee9"},
- {0x76fece,"0f57c0418bc048c1e004480343480f1100488b433848893cc8488d4b208b5708e8cdf7fb00ff430c"},
+ {0x76fece,"0f57c0418bc048c1e004480343480f1100488b433848893cc8488d4b208b5708e8cdf7fb00ff430c",32},
  {0x77760f,"4c8b155af4ba02"},
  {0x77769a,"8bc84584ff498b42504c8b7c2420488d14888b0488740e0bc3eb0e"},
  {0x7776c3,"8902babc9d88cd498b42504c8d0488498b4238488b0cc88b4910"},
@@ -1351,10 +1371,32 @@ N.weapon_guards={
  {0x77a203,"4c8b47584983c0084d8d0490ba955bec048bf0488b47402bf14a8b0cf08b4910e8b8f58500"},
  {0x77a1cd,"4c8b47584983c00c4d8d0490ba9cfa25e5"},
 }
+-- The Magazine insertion helper moved by 0xD0 in the September 24 update.
+-- Decode only this reviewed E8 rel32 operand and verify the entire unchanged
+-- helper at its destination. No wildcard roots, field offsets or runtime scan.
+N.weapon_insert_guard="48895c2408488974241048897c2418448b510833c0448b5910418bf0440fafda448bca418d7aff4585d274274c8b018b590c8bcf428d14184823d1498d0cd0418b14d03bd3740e413bd17409ffc0413bc272df33c9488b5c2408488bc1488b7c2418897104488b742410448909c3"
 function N.check_weapon_module(read,base)
+ local size=N.image_size
+ if not size then return false,'native module not validated' end
+ for _,rva in ipairs({0x3326648,0x3326CF0,0x3326A70}) do
+  if rva+8>size then return false,'weapon root outside module' end
+ end
  for _,v in ipairs(N.weapon_guards) do
   local want=v[2]:gsub('..',function(h)return string.char(tonumber(h,16))end)
-  if read(base+v[1],#want)~=want then return false,string.format('weapon code guard 0x%X',v[1]) end
+  if v[1]+#want>size then return false,'weapon guard outside module' end
+  local got=read(base+v[1],#want)
+  if not got or #got~=#want then return false,string.format('weapon code guard 0x%X short read',v[1]) end
+  if v[3] then
+   local off=v[3]
+   if got:sub(1,off+1)~=want:sub(1,off+1) or got:sub(off+6)~=want:sub(off+6) then
+    return false,string.format('weapon code guard 0x%X',v[1])
+   end
+   local target=v[1]+off+5+i32(got,off+1)
+   local body=N.weapon_insert_guard:gsub('..',function(h)return string.char(tonumber(h,16))end)
+   if target<4096 or target+#body>size or read(base+target,#body)~=body then
+    return false,'weapon insertion helper guard'
+   end
+  elseif got~=want then return false,string.format('weapon code guard 0x%X',v[1]) end
  end
  return true
 end
@@ -1767,7 +1809,7 @@ function FRV.poll(session,avatar)
  return FRV.poll_tank(session,collection)
 end
 
--- 1.4.3: staged reload and retained telemetry. Raw ammo values; no ammo prediction.
+-- 1.4.4: staged reload and retained telemetry. Raw ammo values; no ammo prediction.
 -- No type brute force, world scan, GOID adjacency binding or ammo prediction.
 Tank={active=nil,history={},history_serial=0,MAX_HISTORY=8,KEEP_PROGRESS=120,STALE_AFTER=3,RELOAD_STALE_AFTER=1}
 Tank.NEW_RESOURCE='b0c9faf4af8903f9'
@@ -2187,6 +2229,55 @@ function Tank.learn_profile(c,n)
   all[r]={shape=c.shape,model=c.cache_model,state_ok=c.state_cache_ok==true};log('TANK_RESOURCE_LEARNED resource='..r..' shape='..c.shape..' model='..c.cache_model)
  end
 end
+-- Narrow cold-start fallback for the two verified rocket pods. Evidence is
+-- local to the current hull/reference set and never teaches a session profile.
+local ROCKET_RESOURCE='8aff7f0793a5bced'
+local function rocket_sample(a,q,id,exists,n,now)
+ if a.kind~='new' then return end
+ if a.rocket_ref_key~=a.ref_key then a.rocket_ref_key=a.ref_key;a.rack_unknown_since=now end
+ if not a.rack_unknown_since then a.rack_unknown_since=now end
+ local m=n and n.magazine;local d=n and n.descriptor
+ if C.weapon_cache==false or exists==false or resource(n)~=ROCKET_RESOURCE
+  or not m or not integer(m.current,10) or not d or d.goid~=id then q.rocket_evidence=nil;return end
+ local old=q.rocket_evidence;local same=old and old.ref_key==a.ref_key and now-old.at<=1.2
+  and old.descriptor.entity==d.entity and old.descriptor.unit==d.unit
+  and old.descriptor.goid==d.goid and old.descriptor.resource==d.resource
+ q.rocket_evidence={descriptor=d,current=m.current,at=now,ref_key=a.ref_key,
+  samples=same and old.samples+1 or 1,
+  decreased=same and (old.decreased or m.current<old.current) or false}
+end
+function Tank.try_rocket_fallback(a,now)
+ if C.weapon_cache==false or a.kind~='new' or not Tank.is_new() or a.ambiguous or #a.refs~=5 then return end
+ local complete=#(a.racks or {})==2
+ if complete then
+  for _,id in ipairs(a.racks)do local c=a.children[id];complete=complete and c and c.value and c.value.ammo~=nil end
+ end
+ if complete then a.rack_unknown_since=nil;return end
+ a.rack_unknown_since=a.rack_unknown_since or now
+ local candidates={};local decreased=false
+ for _,id in ipairs(a.refs)do
+  local q=a.observed and a.observed[id]
+  if q and resource(q.native)==ROCKET_RESOURCE then
+   local e=q.rocket_evidence;local c=a.children[id]
+   if not e or e.ref_key~=a.ref_key or e.samples<2 or now-e.at>1.2 or q.exists==false
+    or (c and (c.shape~='rack' or c.cache_rejected)) then return end
+   candidates[#candidates+1]={id=id,e=e};decreased=decreased or e.decreased
+  end
+ end
+ if #candidates~=2 or (not decreased and now-a.rack_unknown_since<2) then return end
+ local allowed={};for _,v in ipairs(candidates)do allowed[v.id]=true end
+ for _,id in ipairs(a.racks or {})do if not allowed[id] then return end end
+ for _,v in ipairs(candidates)do
+  local c=a.children[v.id]
+  -- A healthy channel keeps its existing calibration and sampling schedule.
+  if not c or not c.value or c.value.ammo==nil then
+   if not Tank.bind_shape(a,v.id,'rack') then return end
+   c=a.children[v.id];c.native_descriptor=v.e.descriptor;c.cache_model='magazine_current'
+   c.value={ammo=v.e.current};c.at=v.e.at;c.cache_live=true
+   log('TANK_ROCKET_FALLBACK hull='..M.hull..' id='..v.id..' reason='..(decreased and 'observed_decrease' or 'unknown_timeout'))
+  end
+ end
+end
 local function scalar(x)
  if x==nil then return 'nil' end
  if type(x)=='number' or type(x)=='boolean' then return tostring(x) end
@@ -2220,6 +2311,7 @@ function Tank.observe(a,id,exists,f,reason,n,why,batch_attempt,native_attempt)
   end
  end
  if native_attempt then
+  rocket_sample(a,q,id,exists,n,now)
   q.native_attempts=(q.native_attempts or 0)+1;q.native_at=now;q.native=n;q.native_reason=why
   if n then q.native_success_at=now end
   local key=native_ammo(n)
@@ -2284,6 +2376,7 @@ function Tank.discover_child(session,a,id,now)
    log('TANK_NATIVE_DISCOVERY hull='..M.hull..' id='..id..' resource='..n.descriptor.resource..' shape='..c.shape..' source=session_resource_profile')
   end
  end
+ Tank.try_rocket_fallback(a,now)
 end
 
 -- Unified data dictionary. No eval/loadstring, shell, external executable or writes
@@ -2326,7 +2419,7 @@ function HudConfig.parse(s)
 end
 function HudConfig.template(v)
  local lines={
- '# DRIVER HUD 1.4.3 - Unified HUD settings / 统一设置',
+ '# DRIVER HUD 1.4.4 - Unified HUD settings / 统一设置',
  '# Edit in Notepad and save; applies in about 2 seconds / 记事本保存后约两秒生效',
  '# Invalid edits preserve ALL previous settings / 格式错误保留全部上次设置',
  '# font = new (default / 默认几何字体) or old (旧版字体)',

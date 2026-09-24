@@ -1,7 +1,7 @@
 {
   "Version": 1,
   "Guid": "4d9e465c-8d42-4be1-91f6-31a8b3e86140",
-  "Name": "DRIVER HUD 1.4.3",
+  "Name": "DRIVER HUD 1.4.5",
   "Description": "Vehicle health, ammunition and reload HUDs for Bastion and Gatling/missile tanks, plus HMG and Supply FRVs. Requires Bingus Shared Loader.",
   "Options": [
     {
